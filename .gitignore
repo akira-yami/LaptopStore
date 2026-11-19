@@ -46,3 +46,6 @@ build/
 # OS generated files
 .DS_Store
 Thumbs.db
+
+# Local design assets (kept locally, not tracked on GitHub)
+design/
