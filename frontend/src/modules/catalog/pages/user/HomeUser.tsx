@@ -5,11 +5,11 @@ import { catalogApi } from '../../api/catalogApi';
 import ProductCard, { ProductCardSkeleton } from '../../components/ProductCard';
 import { Category, ProductSummaryResponse } from '../../types/catalog';
 
-const TRUST: [IconName, string, string][] = [
-    ['shield', 'Chính hãng 100%', 'Yên tâm chọn lựa'],
-    ['truck', 'Giao hàng toàn quốc', 'Nhanh chóng, tận nơi'],
-    ['wallet', 'Thanh toán linh hoạt', 'COD hoặc VNPay'],
-    ['headset', 'Tư vấn tận tâm', 'Tìm đúng chiếc máy'],
+const TRUST: [IconName, string][] = [
+    ['shield', 'Chính hãng 100%'],
+    ['truck', 'Giao hàng toàn quốc'],
+    ['wallet', 'Thanh toán linh hoạt'],
+    ['headset', 'Tư vấn tận tâm'],
 ];
 
 const categoryLink = (name: string) => `/products?categoryName=${encodeURIComponent(name)}`;
@@ -18,7 +18,6 @@ export const HomeUser: React.FC = () => {
     const [categories, setCategories] = useState<Category[]>([]);
     const [activeCategory, setActiveCategory] = useState<string>('');
     const [products, setProducts] = useState<ProductSummaryResponse[]>([]);
-    const [totalProducts, setTotalProducts] = useState<number | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(false);
 
@@ -36,70 +35,52 @@ export const HomeUser: React.FC = () => {
             .then((page) => {
                 if (cancelled) return;
                 setProducts(page.content);
-                if (!activeCategory) setTotalProducts(page.totalElements);
             })
             .catch(() => !cancelled && setError(true))
             .finally(() => !cancelled && setLoading(false));
         return () => { cancelled = true; };
     }, [activeCategory]);
 
-    const chips = [{ name: '', label: 'Tất cả laptop' }, ...categories.slice(0, 5).map((c) => ({ name: c.name, label: c.name }))];
+    const chips = [{ name: '', label: 'Tất cả' }, ...categories.slice(0, 5).map((c) => ({ name: c.name, label: c.name }))];
 
     return (
-        <div className="ls-container">
-            {/* Hero */}
+        <div className="ls-container home-page">
             <section className="hero">
                 <div className="hero-copy">
-                    <div className="eyebrow">Mở máy lên. Mở điều mới.</div>
-                    <h1>Chiếc laptop cho <span className="hero-line">mọi <em>ý tưởng.</em></span></h1>
-                    <p>Học điều mới, tạo điều hay, chinh phục thử thách.<br />Tìm người bạn đồng hành đúng chất bạn.</p>
+                    <h1>Mở máy,<br /><em>mở điều mới.</em></h1>
+                    <p>Tìm chiếc laptop hợp với cách bạn học, làm việc và sáng tạo.</p>
                     <div className="row">
                         <Link to="/products" className="btn primary">Khám phá laptop <Icon name="arrow-right" /></Link>
-                        <Link to="/ai-assistant" className="btn"><Icon name="sparkles" /> Tư vấn cùng AI</Link>
-                    </div>
-                    <div className="hero-stats">
-                        <div><strong>{totalProducts ?? '—'}+</strong><span>mẫu laptop chính hãng</span></div>
-                        <div><strong>{categories.length || '—'}</strong><span>nhu cầu sử dụng</span></div>
-                        <div><strong>24h</strong><span>giao nhanh nội thành</span></div>
+                        <Link to="/ai-assistant" className="btn hero-secondary"><Icon name="sparkles" /> Tư vấn AI</Link>
                     </div>
                 </div>
                 <div className="hero-art">
-                    <img src="/images/hero-laptop.svg" alt="Laptop bạc với hình nền cam" />
-                    <div className="hero-label">
-                        <Icon name="shield" />
-                        <div><strong>Chính hãng. An tâm.</strong><br /><span className="muted">Chọn chiếc máy, trao niềm tin.</span></div>
-                    </div>
+                    <img src="/images/laptopstore-intro.webp" alt="" width={2172} height={724} fetchPriority="high" />
                 </div>
             </section>
 
-            <div className="trust-row">
-                {TRUST.map(([icon, title, sub]) => (
-                    <div className="trust-item" key={title}>
+            <ul className="trust-row">
+                {TRUST.map(([icon, title]) => (
+                    <li className="trust-item" key={title}>
                         <Icon name={icon} />
-                        <div><strong>{title}</strong><small>{sub}</small></div>
-                    </div>
+                        {title}
+                    </li>
                 ))}
-            </div>
+            </ul>
 
-            {/* Sản phẩm nổi bật */}
-            <section className="section">
+            <section className="section home-catalog" aria-labelledby="home-catalog-title">
                 <div className="section-head">
-                    <div>
-                        <div className="eyebrow">Lựa chọn dành cho bạn</div>
-                        <h2>Đúng nhu cầu. Đúng chiếc máy.</h2>
-                        <p className="muted">Những cấu hình được yêu thích, sẵn sàng cho ngày mới.</p>
-                    </div>
-                    <Link to={activeCategory ? categoryLink(activeCategory) : '/products'} className="btn sm">
+                    <h2 id="home-catalog-title">Laptop theo nhu cầu</h2>
+                    <Link to={activeCategory ? categoryLink(activeCategory) : '/products'} className="text-btn">
                         Xem tất cả <Icon name="arrow-right" />
                     </Link>
                 </div>
-                <div className="chips" role="tablist" aria-label="Lọc theo nhu cầu">
+                <div className="chips" role="group" aria-label="Lọc theo nhu cầu">
                     {chips.map((c) => (
                         <button
                             key={c.label}
                             type="button"
-                            role="tab"
-                            aria-selected={activeCategory === c.name}
+                            aria-pressed={activeCategory === c.name}
                             className={`chip ${activeCategory === c.name ? 'active' : ''}`}
                             onClick={() => setActiveCategory(c.name)}
                         >
@@ -123,38 +104,36 @@ export const HomeUser: React.FC = () => {
                 )}
             </section>
 
-            {/* Bộ sưu tập */}
-            <section className="section" style={{ paddingTop: 8 }}>
+            <section className="section home-collections" aria-labelledby="collection-title">
+                <h2 id="collection-title">Khám phá bộ sưu tập</h2>
                 <div className="collection-grid">
-                    <Link to={categoryLink('Mỏng nhẹ')} className="collection orange">
-                        <div>
-                            <div className="eyebrow" style={{ fontSize: 9 }}>Work anywhere</div>
-                            <h3>Nhẹ hành trang.<br />Rộng cảm hứng.</h3>
-                            <p>Không gian làm việc theo bạn đến mọi nơi.</p>
-                            <span className="text-btn">Laptop mỏng nhẹ <Icon name="arrow-right" /></span>
+                    <Link to={categoryLink('Mỏng nhẹ')} className="collection collection-thin">
+                        <div className="collection-copy">
+                            <h3>Laptop mỏng nhẹ</h3>
+                            <p>Gọn nhẹ để mang theo khi đi học, đi làm hay di chuyển.</p>
+                            <span className="collection-cta">Khám phá <Icon name="arrow-right" /></span>
                         </div>
-                        <img src="/images/product-silver.svg" alt="Laptop mỏng nhẹ màu bạc" />
+                        <img src="/images/collection-thin.webp" alt="" width={800} height={600} loading="lazy" />
                     </Link>
-                    <Link to={categoryLink('Gaming')} className="collection">
-                        <div>
-                            <div className="eyebrow" style={{ fontSize: 9 }}>Play your way</div>
-                            <h3>Sẵn sàng cho<br />trận đấu lớn.</h3>
-                            <p>Cấu hình mạnh. Từng khung hình mượt mà.</p>
-                            <span className="text-btn">Khám phá gaming <Icon name="arrow-right" /></span>
+                    <Link to={categoryLink('Gaming')} className="collection collection-gaming">
+                        <div className="collection-copy">
+                            <h3>Laptop gaming</h3>
+                            <p>Đồ họa mạnh và màn hình mượt cho những tựa game yêu thích.</p>
+                            <span className="collection-cta">Khám phá <Icon name="arrow-right" /></span>
                         </div>
-                        <img src="/images/product-dark.svg" alt="Laptop gaming màu đen" />
+                        <img src="/images/collection-gaming.webp" alt="" width={800} height={600} loading="lazy" />
                     </Link>
                 </div>
             </section>
 
-            <div className="ai-banner">
+            <section className="ai-banner" aria-labelledby="ai-banner-title">
                 <div className="ai-symbol"><Icon name="sparkles" /></div>
                 <div>
-                    <h3>Chưa biết chọn máy nào?</h3>
-                    <p className="muted">Kể cho AI nghe nhu cầu và ngân sách của bạn.</p>
+                    <h2 id="ai-banner-title">Tìm laptop cùng AI</h2>
+                    <p>Cho AI biết nhu cầu và ngân sách để nhận gợi ý cấu hình phù hợp.</p>
                 </div>
-                <Link to="/ai-assistant" className="btn primary push">Tìm máy cùng AI <Icon name="arrow-right" /></Link>
-            </div>
+                <Link to="/ai-assistant" className="btn primary push">Bắt đầu tư vấn <Icon name="arrow-right" /></Link>
+            </section>
         </div>
     );
 };

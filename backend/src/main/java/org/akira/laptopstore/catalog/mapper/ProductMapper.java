@@ -12,11 +12,10 @@ import org.akira.laptopstore.catalog.dto.response.ProductSummaryResponse;
 
 import org.mapstruct.Mapper;
 import org.mapstruct.Mapping;
-import org.mapstruct.MappingTarget; // Thêm import
-import org.mapstruct.AfterMapping; // Thêm import
-
 import java.math.BigDecimal;
+import java.util.Comparator;
 import java.util.List;
+import java.util.Objects;
 
 @Mapper(componentModel = "spring")
 public interface ProductMapper {
@@ -25,6 +24,9 @@ public interface ProductMapper {
     @Mapping(source = "category.name", target = "categoryName")
     @Mapping(target = "thumbnailImage", expression = "java(this.getThumbnail(product))")
     @Mapping(target = "startingPrice", expression = "java(this.getStartingPrice(product))")
+    @Mapping(source = "specification.cpu", target = "cpu")
+    @Mapping(source = "specification.screenSize", target = "screenSize")
+    @Mapping(target = "availableConfiguration", expression = "java(this.getAvailableConfiguration(product))")
     ProductSummaryResponse toProductSummaryResponse(Product product);
 
     // THÊM ĐOẠN NÀY VÀO ĐỂ FIX LỖI Ở CONTROLLER
@@ -69,29 +71,17 @@ public interface ProductMapper {
                 .orElse(null);
     }
 
-    @AfterMapping
-    default void customizeProductSummaryResponse(Product product, @MappingTarget ProductSummaryResponse response) {
-        // 1. Lấy ảnh thumbnail (ưu tiên ảnh có isPrimary = true)
-        if (product.getImages() != null && !product.getImages().isEmpty()) {
-            for (ProductImage img : product.getImages()) {
-                if (Boolean.TRUE.equals(img.getIsPrimary())) {
-                    response.setThumbnailImage(img.getImageUrl());
-                    break;
-                }
-            }
-            // Nếu không có ảnh nào được set primary, lấy tạm ảnh đầu tiên
-            if (response.getThumbnailImage() == null) {
-                response.setThumbnailImage(product.getImages().get(0).getImageUrl());
-            }
+    default ProductSummaryResponse.AvailableConfiguration getAvailableConfiguration(Product product) {
+        if (product == null || !product.isActive() || !"ACTIVE".equalsIgnoreCase(product.getStatus()) || product.getVariants() == null) {
+            return null;
         }
 
-        // 2. Lấy giá nhỏ nhất làm startingPrice
-        if (product.getVariants() != null && !product.getVariants().isEmpty()) {
-            BigDecimal minPrice = product.getVariants().stream()
-                    .map(ProductVariant::getPrice)
-                    .min(BigDecimal::compareTo)
-                    .orElse(null);
-            response.setStartingPrice(minPrice);
-        }
+        return product.getVariants().stream()
+                .filter(Objects::nonNull)
+                .filter(variant -> variant.isActive() && "ACTIVE".equalsIgnoreCase(variant.getStatus()))
+                .filter(variant -> variant.getQuantity() != null && variant.getQuantity() > 0 && variant.getPrice() != null)
+                .min(Comparator.comparing(ProductVariant::getPrice).thenComparing(ProductVariant::getId, Comparator.nullsLast(Comparator.naturalOrder())))
+                .map(variant -> new ProductSummaryResponse.AvailableConfiguration(variant.getRam(), variant.getStorage(), variant.getPrice()))
+                .orElse(null);
     }
 }

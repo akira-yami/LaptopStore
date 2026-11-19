@@ -58,8 +58,8 @@ export const AIChatWidget: React.FC = () => {
           </form>
         </div>
       ) : (
-        <button type="button" className="chat-fab-btn" onClick={() => setIsOpen(true)}>
-          <Icon name="sparkles" /> Tư vấn AI
+        <button type="button" className="chat-fab-btn" aria-label="Tư vấn AI" onClick={() => setIsOpen(true)}>
+          <Icon name="sparkles" /> <span>Tư vấn AI</span>
         </button>
       )}
     </div>

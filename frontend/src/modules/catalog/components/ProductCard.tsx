@@ -1,48 +1,93 @@
-import { formatMoney, Icon, ProductImage } from '@/components/ui';
-import React from 'react';
-import { Link } from 'react-router-dom';
-import { ProductSummaryResponse } from '../types/catalog';
+import { useAuth } from '@/app/providers/AuthProvider';
+import { formatMoney, Icon, ProductImage, useToast } from '@/components/ui';
+import React, { useState } from 'react';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
+import type { ProductSummaryResponse } from '../types/catalog';
+import { AddToCartDialog } from './AddToCartDialog';
 
 interface Props {
     product: ProductSummaryResponse;
 }
 
-/** Thẻ sản phẩm theo design (.product-card). */
 const ProductCard: React.FC<Props> = ({ product }) => {
+    const { isAuthenticated, isLoading } = useAuth();
+    const location = useLocation();
+    const navigate = useNavigate();
+    const toast = useToast();
+    const [choosing, setChoosing] = useState(false);
     const href = `/products/${product.id}`;
+    const configuration = product.availableConfiguration;
+    const price = configuration?.price ?? product.startingPrice;
+    const specs = [
+        ['CPU', product.cpu],
+        ['Màn hình', product.screenSize],
+        ['RAM', configuration?.ram],
+        ['Ổ cứng', configuration?.storage],
+    ].filter(([, value]) => value?.trim());
+
+    const chooseConfiguration = () => {
+        if (!isAuthenticated) {
+            toast('Đăng nhập để thêm sản phẩm vào giỏ hàng.');
+            navigate('/login', { state: { from: location } });
+            return;
+        }
+        setChoosing(true);
+    };
+
     return (
         <article className="product-card">
             <Link to={href} className="product-visual" aria-label={`Xem ${product.name}`}>
-                {product.categoryName && <span className="mini-tag">{product.categoryName}</span>}
                 <ProductImage src={product.thumbnailImage} alt={product.name} hint={`${product.categoryName} ${product.name}`} />
             </Link>
-            <div className="eyebrow">{product.brandName}</div>
-            <h3><Link to={href}>{product.name}</Link></h3>
-            <p className="spec">Chính hãng · Bảo hành 12 tháng</p>
-            <div className="price">
-                {product.startingPrice != null ? (
-                    <><small>Giá từ</small>{formatMoney(product.startingPrice)}</>
+            <div className="product-card-content">
+                <p className="product-meta">{[product.brandName, product.categoryName].filter(Boolean).join(' · ')}</p>
+                <h3><Link to={href}>{product.name}</Link></h3>
+                {specs.length > 0 ? (
+                    <dl className="product-specs">
+                        {specs.map(([label, value]) => (
+                            <div key={label}><dt>{label}</dt><dd>{value}</dd></div>
+                        ))}
+                    </dl>
                 ) : (
-                    <span className="muted" style={{ fontSize: 14, fontWeight: 600 }}>Liên hệ để báo giá</span>
+                    <Link className="text-btn small product-spec-link" to={href}>Xem thông số <Icon name="arrow-right" /></Link>
                 )}
+                <div className="card-foot">
+                    <div className="card-pricing">
+                        {price != null
+                            ? <div className="price"><small>Giá từ</small>{formatMoney(price)}</div>
+                            : <div className="muted small">Liên hệ để báo giá</div>}
+                        {configuration !== undefined && (
+                            <span className={`card-stock ${configuration ? 'in-stock' : ''}`}>
+                                <span className="dot" /> {configuration ? 'Còn hàng' : 'Tạm hết hàng'}
+                            </span>
+                        )}
+                    </div>
+                    <button
+                        type="button"
+                        className="btn primary"
+                        aria-haspopup="dialog"
+                        disabled={isLoading || configuration === null}
+                        onClick={chooseConfiguration}
+                    >
+                        <Icon name="cart" /> Thêm vào giỏ
+                    </button>
+                </div>
             </div>
-            <div className="card-foot">
-                <span className="rating"><span className="star">✓</span> Miễn phí giao hàng</span>
-                <Link to={href} className="btn sm" aria-label={`Xem ${product.name}`}>
-                    <Icon name="arrow-right" />
-                </Link>
-            </div>
+            {choosing && <AddToCartDialog product={product} onDismiss={() => setChoosing(false)} />}
         </article>
     );
 };
 
 export const ProductCardSkeleton: React.FC = () => (
     <div className="product-card" aria-hidden="true">
-        <div className="skeleton" style={{ aspectRatio: '1.48', marginBottom: 16 }} />
-        <div className="skeleton" style={{ height: 10, width: '40%', marginBottom: 10 }} />
-        <div className="skeleton" style={{ height: 16, width: '90%', marginBottom: 8 }} />
-        <div className="skeleton" style={{ height: 16, width: '60%', marginBottom: 18 }} />
-        <div className="skeleton" style={{ height: 22, width: '50%' }} />
+        <div className="product-visual skeleton" />
+        <div className="product-card-content product-card-loading">
+            <div className="skeleton" style={{ height: 12, width: '45%' }} />
+            <div className="skeleton" style={{ height: 20, width: '80%' }} />
+            <div className="skeleton" style={{ height: 96 }} />
+            <div className="skeleton" style={{ height: 38, width: '55%' }} />
+            <div className="skeleton" style={{ height: 44 }} />
+        </div>
     </div>
 );
 

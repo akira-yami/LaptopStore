@@ -28,7 +28,6 @@ import { ProfilePage } from '@/modules/user/pages/ProfilePage';
 import { VnPayReturnPage } from '@/modules/payment/pages/user/VnPayReturnPage';
 
 // AI
-import { AIChatWidget } from '@/modules/ai/components/AIChatWidget';
 import { AIChatPage } from '@/modules/ai/pages/AIChatPage';
 
 // Cart & Order
@@ -63,13 +62,6 @@ const ScrollToTop: React.FC = () => {
     window.scrollTo(0, 0);
   }, [pathname]);
   return null;
-};
-
-/** Widget tư vấn chỉ hiện ở khu mua hàng, không che bảng ở trang Staff/Admin. */
-const ChatWidgetGate: React.FC = () => {
-  const { pathname } = useLocation();
-  if (pathname.startsWith('/staff') || pathname.startsWith('/admin') || pathname.startsWith('/ai-assistant')) return null;
-  return <AIChatWidget />;
 };
 
 const operationPages = [
@@ -149,7 +141,6 @@ export const AppRouter: React.FC = () => (
             </Route>
           </Route>
         </Routes>
-        <ChatWidgetGate />
       </CartProvider>
     </ToastProvider>
   </BrowserRouter>

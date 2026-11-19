@@ -4,39 +4,35 @@ import { Link } from 'react-router-dom';
 
 export const Footer: React.FC = () => (
     <footer className="footer">
-        <div className="ls-container">
+        <div className="ls-container footer-inner">
             <div className="footer-cols">
                 <div>
                     <Brand />
-                    <p>Cùng bạn tìm chiếc laptop phù hợp, để mỗi ngày có thêm một ý tưởng mới.</p>
-                    <div className="row" style={{ marginTop: 18, color: 'var(--orange)' }}>
-                        <Icon name="shield" />
-                        <small>Sản phẩm chính hãng · Tư vấn tận tâm</small>
-                    </div>
+                    <p>Cửa hàng laptop chính hãng cho học tập, công việc và giải trí.</p>
                 </div>
                 <div>
-                    <h4>Khám phá LaptopStore</h4>
+                    <h2>Khám phá</h2>
                     <Link to="/products">Tất cả laptop</Link>
                     <Link to="/products?categoryName=Gaming">Laptop gaming</Link>
                     <Link to={`/products?categoryName=${encodeURIComponent('Văn phòng')}`}>Laptop văn phòng</Link>
                     <Link to={`/products?categoryName=${encodeURIComponent('Mỏng nhẹ')}`}>Laptop mỏng nhẹ</Link>
-                    <Link to="/ai-assistant">Tư vấn cùng AI</Link>
+                    <Link to="/ai-assistant">Tư vấn AI</Link>
                 </div>
                 <div>
-                    <h4>Chăm sóc khách hàng</h4>
+                    <h2>Đơn hàng và tài khoản</h2>
                     <Link to="/orders">Đơn hàng của tôi</Link>
                     <Link to="/profile">Thông tin tài khoản</Link>
                     <Link to="/me/addresses">Sổ địa chỉ</Link>
-                    <a href="tel:18002026">Hotline 1800 2026</a>
                 </div>
                 <div>
-                    <h4>Thanh toán an tâm</h4>
-                    <p style={{ marginTop: 0 }}>COD · VNPay</p>
-                    <p>Giao hàng toàn quốc<br />Hỗ trợ từ 8:00 đến 21:00</p>
+                    <h2>Hỗ trợ khách hàng</h2>
+                    <a className="footer-phone" href="tel:18002026"><Icon name="phone" /> 1800 2026</a>
+                    <p>8:00–21:00 hằng ngày</p>
+                    <p className="footer-payment"><Icon name="wallet" /> COD và VNPay</p>
                 </div>
             </div>
             <div className="footer-bottom">
-                <span>© 2026 LaptopStore. Công nghệ cho điều bạn muốn.</span>
+                <span>© 2026 laptopstore</span>
                 <span>Đồ án J2EE · Nhóm 4</span>
             </div>
         </div>

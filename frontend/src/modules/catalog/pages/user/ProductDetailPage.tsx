@@ -7,8 +7,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { catalogApi } from '../../api/catalogApi';
 import { ProductResponse, VariantSnapshot } from '../../types/catalog';
-
-const isSellable = (v: VariantSnapshot) => (!v.status || v.status.toUpperCase() === 'ACTIVE') && v.quantity > 0;
+import { isSellableVariant } from '../../utils/variants';
 
 const ProductDetailPage: React.FC = () => {
     const { productId } = useParams<{ productId: string }>();
@@ -43,7 +42,7 @@ const ProductDetailPage: React.FC = () => {
                 if (cancelled) return;
                 setProduct(data);
                 const variants = data.variants ?? [];
-                setSelectedVariant(variants.find(isSellable) ?? variants[0] ?? null);
+                setSelectedVariant(variants.find(isSellableVariant) ?? variants[0] ?? null);
                 const images = data.images ?? [];
                 const primary = images.findIndex((img) => img.isPrimary);
                 setImageIndex(primary > 0 ? primary : 0);
@@ -60,7 +59,7 @@ const ProductDetailPage: React.FC = () => {
     const images = useMemo(() => product?.images ?? [], [product]);
     const currentImage = images[imageIndex]?.imageUrl ?? null;
     const variants = product?.variants ?? [];
-    const canBuy = !!selectedVariant && isSellable(selectedVariant);
+    const canBuy = !!selectedVariant && isSellableVariant(selectedVariant);
 
     const addToCart = async (mode: 'add' | 'buy') => {
         if (!product || !selectedVariant) return;
@@ -163,7 +162,7 @@ const ProductDetailPage: React.FC = () => {
                                         aria-pressed={selectedVariant?.id === v.id}
                                     >
                                         <strong>{v.ram} / {v.storage}</strong><br />
-                                        <span className="small">{v.color}{!isSellable(v) ? ' · Hết hàng' : ''}</span>
+                                        <span className="small">{v.color}{!isSellableVariant(v) ? ' · Hết hàng' : ''}</span>
                                     </button>
                                 ))}
                             </div>

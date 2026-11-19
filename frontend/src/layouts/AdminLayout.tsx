@@ -1,5 +1,6 @@
 import { ADMIN_HOME } from '@/app/router/workspacePaths';
 import { Brand, Icon, type IconName } from '@/components/ui';
+import { ThemeToggle } from '@/components/ui/ThemeToggle';
 import React from 'react';
 import { Link, NavLink, Outlet } from 'react-router-dom';
 import { useWorkspaceControls } from './useWorkspaceControls';
@@ -63,6 +64,7 @@ export const AdminLayout: React.FC = () => {
           </button>
           <span className="workspace-header-title"><Icon name="shield" /> Quản trị hệ thống</span>
           <div className="push">
+            <ThemeToggle />
             <div className="avatar workspace-avatar" aria-hidden="true">{initials}</div>
             <div className="user-name">{accountName}<small>Quản trị viên</small></div>
           </div>

@@ -38,6 +38,12 @@ Response thành công dùng DTO trực tiếp, danh sách dùng `PageResponse<T>
 
 Các path trong bảng đều nối với `/api/v1`; `{id}` của user roles là `/admin/users/{id}/roles`. Đây là danh sách khởi đầu, không tuyên bố đầy đủ tất cả CRUD.
 
+## Thông tin thẻ sản phẩm
+
+`GET /api/v1/products/search` trả trang kết quả công khai. Mỗi phần tử `content` có thể chứa `cpu` và `screenSize` từ thông số sản phẩm. `availableConfiguration` chứa `ram`, `storage` và `price` của cấu hình đang bán, còn tồn và có giá thấp nhất. Nếu không có cấu hình như vậy, trường này là `null`. `startingPrice` tiếp tục biểu thị giá thấp nhất trong các biến thể của sản phẩm.
+
+Khi mở hộp thoại thêm vào giỏ, frontend tải cấu hình hiện tại bằng `GET /api/v1/products/{id}`. `POST /api/v1/me/cart/items` nhận `productVariantId` và `quantity` rồi kiểm tra lại trạng thái và tồn kho của cấu hình.
+
 ## Ví dụ checkout
 
 Header `Idempotency-Key: checkout-example-001`. Request không nhận giá/tổng/userId:

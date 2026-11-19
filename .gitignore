@@ -49,3 +49,7 @@ Thumbs.db
 
 # Local design assets (kept locally, not tracked on GitHub)
 design/
+
+# Playwright E2E artifacts
+frontend/playwright-report/
+frontend/test-results/

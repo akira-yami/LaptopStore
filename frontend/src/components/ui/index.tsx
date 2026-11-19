@@ -24,7 +24,7 @@ export const apiErrorMessage = (err: unknown, fallback: string) => {
 
 export const Brand: React.FC<{ to?: string }> = ({ to = '/' }) => (
   <Link to={to} className="brand" aria-label="LaptopStore — về trang chủ">
-    <span className="brand-mark"><Icon name="laptop" /></span>
+    <span className="brand-mark" aria-hidden="true" />
     laptopstore
   </Link>
 );

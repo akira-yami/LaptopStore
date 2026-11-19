@@ -1,5 +1,6 @@
 import { STAFF_HOME } from '@/app/router/workspacePaths';
 import { Brand, Icon, type IconName } from '@/components/ui';
+import { ThemeToggle } from '@/components/ui/ThemeToggle';
 import React from 'react';
 import { Link, NavLink, Outlet } from 'react-router-dom';
 import { useWorkspaceControls } from './useWorkspaceControls';
@@ -47,6 +48,7 @@ export const StaffLayout: React.FC = () => {
           </button>
           <span className="workspace-header-title"><Icon name="orders" /> Vận hành cửa hàng</span>
           <div className="push">
+            <ThemeToggle />
             <Link to="/staff/orders" className="icon-btn" aria-label="Đơn hàng cần xử lý"><Icon name="bell" /></Link>
             <div className="avatar workspace-avatar" aria-hidden="true">{initials}</div>
             <div className="user-name">{accountName}<small>Nhân viên</small></div>

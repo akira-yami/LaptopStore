@@ -38,6 +38,9 @@ export interface ProductSummaryResponse {
   thumbnailImage: string | null; // null khi sản phẩm chưa có ảnh
   active: boolean;
   startingPrice: number | null; // BigDecimal bên Java; null khi chưa có biến thể
+  cpu?: string | null;
+  screenSize?: string | null;
+  availableConfiguration?: { ram: string | null; storage: string | null; price: number } | null;
 }
 
 export interface VariantSnapshot {

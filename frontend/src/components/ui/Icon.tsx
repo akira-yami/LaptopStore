@@ -4,6 +4,9 @@ import React from 'react';
 const ICONS = {
   search: '<circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4.5 4.5"/>',
   cart: '<path d="M2.5 3.5h2l2.3 11.2a2 2 0 0 0 2 1.6h8.7a2 2 0 0 0 2-1.6L21 7H5.3"/><circle cx="9" cy="20" r="1"/><circle cx="18" cy="20" r="1"/>',
+  sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.4 1.4m11.2 11.2L19 19M5 19l1.4-1.4M17.6 6.4 19 5"/>',
+  moon: '<path d="M20.9 13.4A9 9 0 0 1 10.6 3.1 9 9 0 1 0 20.9 13.4Z"/>',
+  phone: '<path d="M7 3H4a1 1 0 0 0-1 1 17 17 0 0 0 17 17 1 1 0 0 0 1-1v-3l-5-2-1.5 2A13 13 0 0 1 7 9.5L9 8 7 3Z"/>',
   user: '<circle cx="12" cy="7.5" r="3.5"/><path d="M4.5 21v-2a7.5 7.5 0 0 1 15 0v2"/>',
   grid: '<rect x="3.5" y="3.5" width="6" height="6" rx="1.3"/><rect x="14.5" y="3.5" width="6" height="6" rx="1.3"/><rect x="3.5" y="14.5" width="6" height="6" rx="1.3"/><rect x="14.5" y="14.5" width="6" height="6" rx="1.3"/>',
   box: '<path d="m3 7 9-4 9 4v10l-9 4-9-4V7Zm0 0 9 4 9-4M12 11v10M7.5 5 17 9.2"/>',

@@ -9,4 +9,8 @@ public class ProductSummaryResponse {
     private String name, brandName, categoryName, status, thumbnailImage;
     private boolean active;
     private BigDecimal startingPrice;
+    private String cpu, screenSize;
+    private AvailableConfiguration availableConfiguration;
+
+    public record AvailableConfiguration(String ram, String storage, BigDecimal price) {}
 }

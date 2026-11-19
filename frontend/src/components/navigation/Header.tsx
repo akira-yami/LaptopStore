@@ -2,6 +2,7 @@ import { useAuth } from '@/app/providers/AuthProvider';
 import { useCart } from '@/app/providers/CartProvider';
 import { ADMIN_HOME, STAFF_HOME } from '@/app/router/workspacePaths';
 import { Brand, Icon, useToast } from '@/components/ui';
+import { ThemeToggle } from '@/components/ui/ThemeToggle';
 import { ROLES } from '@/constants/roles';
 import React, { useEffect, useRef, useState } from 'react';
 import { Link, NavLink, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
@@ -89,88 +90,82 @@ export const Header: React.FC = () => {
     );
 
     return (
-        <>
-            <div className="utility">
-                <div className="ls-container">
-                    <span>Công nghệ tốt hơn. Mỗi ngày.</span>
-                    <span className="utility-extra">
-                        Giao hàng toàn quốc <span style={{ margin: '0 12px', color: '#d7c3b7' }}>|</span>
-                        <a href="tel:18002026">Hotline 1800 2026</a>
-                    </span>
+        <header className="shop-header">
+            <div className="ls-container header-main">
+                <Brand />
+                <nav className="shop-nav" aria-label="Cửa hàng">{navLinks}</nav>
+                {searchForm('shop-search')}
+
+                <div className="header-actions">
+                    <ThemeToggle className="desktop-theme-toggle" />
+                    <button
+                        type="button"
+                        className="icon-btn mobile-only"
+                        aria-label={mobileOpen ? 'Đóng menu' : 'Mở menu'}
+                        aria-expanded={mobileOpen}
+                        aria-controls="shop-mobile-nav"
+                        onClick={() => setMobileOpen((v) => !v)}
+                    >
+                        <Icon name={mobileOpen ? 'close' : 'menu'} />
+                    </button>
+
+                    {isAuthenticated ? (
+                        <div className="account-menu" ref={menuRef}>
+                            <button
+                                type="button"
+                                className="icon-btn"
+                                aria-haspopup="menu"
+                                aria-expanded={menuOpen}
+                                aria-label="Tài khoản"
+                                onClick={() => setMenuOpen((v) => !v)}
+                            >
+                                <span className="avatar" style={{ width: 30, height: 30, borderRadius: 9, fontSize: 11 }}>
+                                    {initials(user?.fullName, user?.email)}
+                                </span>
+                            </button>
+                            {menuOpen && (
+                                <div className="menu-pop" role="menu">
+                                    <div className="menu-head">
+                                        <strong style={{ display: 'block', fontSize: 13 }}>{user?.fullName || 'Khách hàng'}</strong>
+                                        <small className="muted">{user?.email}</small>
+                                    </div>
+                                    <Link to="/profile" role="menuitem"><Icon name="user" />Hồ sơ của tôi</Link>
+                                    <Link to="/orders" role="menuitem"><Icon name="orders" />Đơn hàng</Link>
+                                    <Link to="/me/addresses" role="menuitem"><Icon name="home" />Sổ địa chỉ</Link>
+                                    {isStaff && (
+                                        <Link to={isAdmin ? ADMIN_HOME : STAFF_HOME} role="menuitem">
+                                            <Icon name="grid" />{isAdmin ? 'Không gian quản trị' : 'Không gian nhân viên'}
+                                        </Link>
+                                    )}
+                                    <button type="button" role="menuitem" onClick={() => void handleLogout()}>
+                                        <Icon name="logout" />Đăng xuất
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+                    ) : (
+                        <Link to="/login" state={{ from: location }} className="icon-btn" aria-label="Đăng nhập">
+                            <Icon name="user" />
+                        </Link>
+                    )}
+
+                    <Link to="/cart" className="icon-btn cart-link" aria-label={`Giỏ hàng${count ? `, ${count} sản phẩm` : ''}`}>
+                        <Icon name="cart" />
+                        {count > 0 && <span className="cart-count">{count > 99 ? '99+' : count}</span>}
+                    </Link>
                 </div>
             </div>
-            <header className="shop-header">
-                <div className="ls-container header-main">
-                    <Brand />
-                    <nav className="shop-nav" aria-label="Cửa hàng">{navLinks}</nav>
-                    {searchForm('shop-search')}
 
-                    <div className="header-actions">
-                        <button
-                            type="button"
-                            className="icon-btn mobile-only"
-                            aria-label={mobileOpen ? 'Đóng menu' : 'Mở menu'}
-                            aria-expanded={mobileOpen}
-                            onClick={() => setMobileOpen((v) => !v)}
-                        >
-                            <Icon name={mobileOpen ? 'close' : 'menu'} />
-                        </button>
-
-                        {isAuthenticated ? (
-                            <div className="account-menu" ref={menuRef}>
-                                <button
-                                    type="button"
-                                    className="icon-btn"
-                                    aria-haspopup="menu"
-                                    aria-expanded={menuOpen}
-                                    aria-label="Tài khoản"
-                                    onClick={() => setMenuOpen((v) => !v)}
-                                >
-                                    <span className="avatar" style={{ width: 30, height: 30, borderRadius: 9, fontSize: 11 }}>
-                                        {initials(user?.fullName, user?.email)}
-                                    </span>
-                                </button>
-                                {menuOpen && (
-                                    <div className="menu-pop" role="menu">
-                                        <div className="menu-head">
-                                            <strong style={{ display: 'block', fontSize: 13 }}>{user?.fullName || 'Khách hàng'}</strong>
-                                            <small className="muted">{user?.email}</small>
-                                        </div>
-                                        <Link to="/profile" role="menuitem"><Icon name="user" />Hồ sơ của tôi</Link>
-                                        <Link to="/orders" role="menuitem"><Icon name="orders" />Đơn hàng</Link>
-                                        <Link to="/me/addresses" role="menuitem"><Icon name="home" />Sổ địa chỉ</Link>
-                                        {isStaff && (
-                                            <Link to={isAdmin ? ADMIN_HOME : STAFF_HOME} role="menuitem">
-                                                <Icon name="grid" />{isAdmin ? 'Không gian quản trị' : 'Không gian nhân viên'}
-                                            </Link>
-                                        )}
-                                        <button type="button" role="menuitem" onClick={() => void handleLogout()}>
-                                            <Icon name="logout" />Đăng xuất
-                                        </button>
-                                    </div>
-                                )}
-                            </div>
-                        ) : (
-                            <Link to="/login" state={{ from: location }} className="icon-btn" aria-label="Đăng nhập">
-                                <Icon name="user" />
-                            </Link>
-                        )}
-
-                        <Link to="/cart" className="icon-btn cart-link" aria-label={`Giỏ hàng${count ? `, ${count} sản phẩm` : ''}`}>
-                            <Icon name="cart" />
-                            {count > 0 && <span className="cart-count">{count > 99 ? '99+' : count}</span>}
-                        </Link>
-                    </div>
+            <div className="ls-container mobile-search">
+                {searchForm('')}
+                <ThemeToggle />
+            </div>
+            <nav id="shop-mobile-nav" className={`mobile-nav ${mobileOpen ? 'open' : ''}`} aria-label="Cửa hàng">
+                <div className="ls-container">
+                    {navLinks}
+                    {!isAuthenticated && <Link to="/login">Đăng nhập / Đăng ký</Link>}
                 </div>
-
-                <div className={`mobile-nav ${mobileOpen ? 'open' : ''}`}>
-                    <div className="ls-container">
-                        {searchForm('')}
-                        {navLinks}
-                        {!isAuthenticated && <Link to="/login">Đăng nhập / Đăng ký</Link>}
-                    </div>
-                </div>
-            </header>
-        </>
+            </nav>
+        </header>
     );
 };
