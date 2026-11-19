@@ -6,6 +6,7 @@ import org.akira.laptopstore.order.dto.request.CheckoutPreviewRequest;
 import org.akira.laptopstore.order.dto.request.CreateOrderRequest;
 import org.akira.laptopstore.order.dto.request.UpdateOrderStatusRequest;
 import org.akira.laptopstore.order.dto.response.CheckoutPreviewResponse;
+import org.akira.laptopstore.order.dto.response.OrderDashboardSummaryResponse;
 import org.akira.laptopstore.order.dto.response.OrderPageResponse;
 import org.akira.laptopstore.order.dto.response.OrderResponse;
 import org.akira.laptopstore.order.dto.response.OrderSummaryResponse;
@@ -52,6 +53,13 @@ public class OrderController {
             @PageableDefault(size = 20, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable
     ) {
         return ResponseEntity.ok(OrderPageResponse.from(orderService.getAllOrders(pageable)));
+    }
+
+    // Thống kê tổng quan đơn hàng cho Dashboard Staff/Admin
+    @GetMapping("/staff/orders/summary")
+    @PreAuthorize("hasAnyRole('STAFF', 'ADMIN')")
+    public ResponseEntity<OrderDashboardSummaryResponse> getDashboardSummary() {
+        return ResponseEntity.ok(orderService.getDashboardSummary());
     }
 
     // Lấy chi tiết 1 đơn hàng

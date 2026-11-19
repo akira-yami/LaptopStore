@@ -28,6 +28,15 @@ export const couponApi = {
         return response.data;
     },
 
+    deleteCoupon: async (id: number): Promise<void> => {
+        await apiClient.delete(`/api/v1/admin/coupons/${id}`);
+    },
+
+    getAllUsages: async (): Promise<CouponUsage[]> => {
+        const response = await apiClient.get<CouponUsage[]>('/api/v1/admin/coupon-usages');
+        return response.data;
+    },
+
     getUsagesByCoupon: async (couponId: number): Promise<CouponUsage[]> => {
         const response = await apiClient.get<CouponUsage[]>(`/api/v1/admin/coupon-usages/coupon/${couponId}`);
         return response.data;

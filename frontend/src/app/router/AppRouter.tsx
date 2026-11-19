@@ -21,7 +21,11 @@ import ProductListPage from '@/modules/catalog/pages/user/ProductListPage';
 // Auth & User
 import { LoginPage } from '@/modules/auth/pages/LoginPage';
 import { RegisterPage } from '@/modules/auth/pages/RegisterPage';
+import { AdminUserListPage } from '@/modules/user/pages/admin/AdminUserListPage';
 import { ProfilePage } from '@/modules/user/pages/ProfilePage';
+
+// Payment
+import { VnPayReturnPage } from '@/modules/payment/pages/user/VnPayReturnPage';
 
 // AI
 import { AIChatWidget } from '@/modules/ai/components/AIChatWidget';
@@ -102,6 +106,8 @@ export const AppRouter: React.FC = () => (
             <Route path="/login" element={<LoginPage />} />
             <Route path="/register" element={<RegisterPage />} />
             <Route path="/ai-assistant" element={<AIChatPage />} />
+            <Route path="/payment/vnpay-return" element={<VnPayReturnPage />} />
+            <Route path="/vnpay/return" element={<VnPayReturnPage />} />
             <Route path="/403" element={<ErrorPage kind="forbidden" />} />
 
             <Route element={<ProtectedRoute />}>
@@ -137,6 +143,7 @@ export const AppRouter: React.FC = () => (
               <Route path="products" element={<AdminProductPage />} />
               <Route path="categories" element={<AdminCategoryPage />} />
               <Route path="promotions/*" element={<PromotionRoutes />} />
+              <Route path="users" element={<AdminUserListPage />} />
               {operationPages.map(({ path, Page }) => <Route key={path} path={path} element={<Page />} />)}
               <Route path="*" element={<Navigate to={ADMIN_HOME} replace />} />
             </Route>

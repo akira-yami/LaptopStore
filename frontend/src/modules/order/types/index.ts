@@ -91,6 +91,14 @@ export interface CreateOrderRequest {
   idempotencyKey?: string;
 }
 
+export interface OrderDashboardSummary {
+  totalOrders: number;
+  pendingCount: number;
+  inProgressCount: number;
+  deliveredCount: number;
+  deliveredRevenue: number;
+}
+
 export interface PageResponse<T> {
   content: T[];
   totalElements: number;

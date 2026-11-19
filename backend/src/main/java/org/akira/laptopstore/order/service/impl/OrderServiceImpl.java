@@ -18,6 +18,7 @@ import org.akira.laptopstore.order.dto.request.CheckoutPreviewRequest;
 import org.akira.laptopstore.order.dto.request.CreateOrderRequest;
 import org.akira.laptopstore.order.dto.request.UpdateOrderStatusRequest;
 import org.akira.laptopstore.order.dto.response.CheckoutPreviewResponse;
+import org.akira.laptopstore.order.dto.response.OrderDashboardSummaryResponse;
 import org.akira.laptopstore.order.dto.response.OrderItemResponse;
 import org.akira.laptopstore.order.dto.response.OrderResponse;
 import org.akira.laptopstore.order.dto.response.OrderSummaryResponse;
@@ -318,6 +319,43 @@ public class OrderServiceImpl implements OrderService {
     @Transactional(readOnly = true)
     public Page<OrderSummaryResponse> getAllOrders(Pageable pageable) {
         return toSummaryPage(orderRepository.findAll(pageable));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public OrderDashboardSummaryResponse getDashboardSummary() {
+        long totalOrders = 0;
+        long pendingCount = 0;
+        long inProgressCount = 0;
+        long deliveredCount = 0;
+        BigDecimal deliveredRevenue = BigDecimal.ZERO;
+
+        for (Object[] row : orderRepository.summarizeByStatus()) {
+            OrderStatus status = (OrderStatus) row[0];
+            long count = row[1] == null ? 0L : ((Number) row[1]).longValue();
+            BigDecimal amount = row[2] == null ? BigDecimal.ZERO : new BigDecimal(row[2].toString());
+            totalOrders += count;
+            if (status == OrderStatus.CREATED
+                    || status == OrderStatus.PENDING_PAYMENT
+                    || status == OrderStatus.WAITING_CONFIRMATION) {
+                pendingCount += count;
+            } else if (status == OrderStatus.CONFIRMED
+                    || status == OrderStatus.PACKING
+                    || status == OrderStatus.SHIPPING) {
+                inProgressCount += count;
+            } else if (status == OrderStatus.DELIVERED) {
+                deliveredCount += count;
+                deliveredRevenue = deliveredRevenue.add(amount);
+            }
+        }
+
+        return OrderDashboardSummaryResponse.builder()
+                .totalOrders(totalOrders)
+                .pendingCount(pendingCount)
+                .inProgressCount(inProgressCount)
+                .deliveredCount(deliveredCount)
+                .deliveredRevenue(deliveredRevenue)
+                .build();
     }
 
     @Override

@@ -36,4 +36,7 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
     @Query("select o from Order o where o.status = :status and o.createdAt < :cutoffTime order by o.id")
     List<Order> findByStatusAndCreatedAtBefore(@Param("status") OrderStatus status,
                                                @Param("cutoffTime") Instant cutoffTime);
+
+    @Query("select o.status, count(o), coalesce(sum(o.totalAmount), 0) from Order o group by o.status")
+    List<Object[]> summarizeByStatus();
 }

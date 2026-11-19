@@ -5,10 +5,7 @@ import { catalogApi } from '@/modules/catalog/api/catalogApi';
 import { inventoryApi } from '@/modules/inventory/api/inventoryApi';
 import { InventoryStock } from '@/modules/inventory/types';
 import { orderApi } from '@/modules/order/api/orderApi';
-import { OrderSummary } from '@/modules/order/types';
-
-const PENDING = ['CREATED', 'PENDING_PAYMENT', 'WAITING_CONFIRMATION'];
-const IN_PROGRESS = ['CONFIRMED', 'PACKING', 'PACKED', 'SHIPPING'];
+import { OrderDashboardSummary, OrderSummary } from '@/modules/order/types';
 
 const Metric: React.FC<{ label: string; value: React.ReactNode; sub: string; icon: IconName; tone?: '' | 'warn' | 'bad' }> = ({ label, value, sub, icon, tone = '' }) => (
   <div className="metric">
@@ -18,24 +15,30 @@ const Metric: React.FC<{ label: string; value: React.ReactNode; sub: string; ico
   </div>
 );
 
-/** Tổng quan Staff/Admin: số liệu lấy trực tiếp từ API đơn hàng, kho và catalog. */
+/** Tổng quan Staff/Admin: số liệu lấy từ API tổng hợp đơn hàng, kho và catalog. */
 export const OpsDashboardPage: React.FC<{ workspace: 'admin' | 'staff' }> = ({ workspace }) => {
   const isAdmin = workspace === 'admin';
   const [orders, setOrders] = useState<OrderSummary[]>([]);
+  const [summary, setSummary] = useState<OrderDashboardSummary | null>(null);
   const [totalOrders, setTotalOrders] = useState<number | null>(null);
   const [lowStock, setLowStock] = useState<InventoryStock[] | null>(null);
   const [productCount, setProductCount] = useState<number | null>(null);
 
   useEffect(() => {
-    orderApi.getAllForStaff().then((p) => { setOrders(p.content); setTotalOrders(p.totalElements); }).catch(() => setTotalOrders(null));
+    orderApi.getAllForStaff({ page: 0, size: 6 })
+      .then((p) => { setOrders(p.content); setTotalOrders(p.totalElements); })
+      .catch(() => setTotalOrders(null));
+    orderApi.getDashboardSummary()
+      .then(setSummary)
+      .catch(() => setSummary(null));
     inventoryApi.getLowStockVariants(5).then((r) => setLowStock(r.data)).catch(() => setLowStock(null));
     catalogApi.searchProducts({ page: 0, size: 1 }).then((p) => setProductCount(p.totalElements)).catch(() => setProductCount(null));
   }, []);
 
-  const pending = orders.filter((o) => PENDING.includes(o.status)).length;
-  const inProgress = orders.filter((o) => IN_PROGRESS.includes(o.status)).length;
-  const delivered = orders.filter((o) => o.status === 'DELIVERED');
-  const revenue = delivered.reduce((s, o) => s + o.totalAmount, 0);
+  const pending = summary?.pendingCount ?? 0;
+  const inProgress = summary?.inProgressCount ?? 0;
+  const deliveredCount = summary?.deliveredCount ?? 0;
+  const revenue = summary?.deliveredRevenue ?? 0;
 
   return (
     <>
@@ -54,13 +57,13 @@ export const OpsDashboardPage: React.FC<{ workspace: 'admin' | 'staff' }> = ({ w
         )}
       />
       <div className="metrics">
-        <Metric label="Chờ xác nhận" value={totalOrders === null ? '—' : pending} sub="Đơn mới cần xử lý" icon="clock" tone={pending ? 'warn' : ''} />
-        <Metric label="Đang xử lý / giao" value={totalOrders === null ? '—' : inProgress} sub="Đã xác nhận, đang chuẩn bị" icon="truck" />
+        <Metric label="Chờ xác nhận" value={summary === null ? '—' : pending} sub="Đơn mới cần xử lý" icon="clock" tone={pending ? 'warn' : ''} />
+        <Metric label="Đang xử lý / giao" value={summary === null ? '—' : inProgress} sub="Đã xác nhận, đang chuẩn bị" icon="truck" />
         <Metric label="SKU tồn thấp (≤ 5)" value={lowStock === null ? '—' : lowStock.length} sub="Chủ động lập phiếu nhập" icon="box" tone={lowStock?.length ? 'bad' : ''} />
         <Metric
           label={isAdmin ? 'Doanh thu đơn đã giao' : 'Sản phẩm đang bán'}
-          value={isAdmin ? formatMoney(revenue) : productCount ?? '—'}
-          sub={isAdmin ? `${delivered.length} đơn đã giao` : 'Trong danh mục cửa hàng'}
+          value={isAdmin ? (summary === null ? '—' : formatMoney(revenue)) : productCount ?? '—'}
+          sub={isAdmin ? `${deliveredCount} đơn đã giao` : 'Trong danh mục cửa hàng'}
           icon={isAdmin ? 'chart' : 'laptop'}
         />
       </div>

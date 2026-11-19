@@ -472,6 +472,27 @@ class OrderServiceImplTest {
         verify(orders, times(1)).findById(10L);
     }
 
+    @Test
+    void getDashboardSummaryAggregatesCountsAndRevenueAcrossAllOrders() {
+        when(orders.summarizeByStatus()).thenReturn(List.of(
+                new Object[]{OrderStatus.WAITING_CONFIRMATION, 3L, new BigDecimal("30000000")},
+                new Object[]{OrderStatus.PENDING_PAYMENT, 2L, new BigDecimal("20000000")},
+                new Object[]{OrderStatus.CONFIRMED, 4L, new BigDecimal("40000000")},
+                new Object[]{OrderStatus.PACKING, 1L, new BigDecimal("10000000")},
+                new Object[]{OrderStatus.SHIPPING, 2L, new BigDecimal("25000000")},
+                new Object[]{OrderStatus.DELIVERED, 5L, new BigDecimal("125000000")},
+                new Object[]{OrderStatus.CANCELLED, 1L, new BigDecimal("15000000")}
+        ));
+
+        var summary = service.getDashboardSummary();
+
+        assertEquals(18L, summary.getTotalOrders());
+        assertEquals(5L, summary.getPendingCount());
+        assertEquals(7L, summary.getInProgressCount());
+        assertEquals(5L, summary.getDeliveredCount());
+        assertEquals(new BigDecimal("125000000"), summary.getDeliveredRevenue());
+    }
+
     private Order order(Long id, Long userId) {
         return Order.builder().id(id).userId(userId).orderCode("ORD-" + id).status(OrderStatus.CONFIRMED)
                 .subtotal(new BigDecimal("25000000")).discountAmount(BigDecimal.ZERO).shippingFee(BigDecimal.ZERO)

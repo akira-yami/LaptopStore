@@ -5,6 +5,7 @@ import { useSkuProducts } from '@/modules/cart/hooks/useSkuProducts';
 import { Cart } from '@/modules/cart/types';
 import { userApi } from '@/modules/user/api/userApi';
 import { Address } from '@/modules/user/types';
+import { paymentApi } from '@/modules/payment/api/paymentApi';
 import React, { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { orderApi } from '../../api/orderApi';
@@ -133,6 +134,25 @@ export const CheckoutPage: React.FC = () => {
         idempotencyKey
       );
       await refreshCart();
+
+      if (paymentMethod === 'VNPAY') {
+        try {
+          const payment = await paymentApi.startPayment({ orderId: createdOrder.id, method: 'VNPAY' });
+          const session = await paymentApi.createVnpaySession(payment.id);
+          toast(`Đã tạo đơn ${createdOrder.orderCode}. Đang chuyển tới cổng thanh toán VNPay...`);
+          window.location.assign(session.paymentUrl);
+          return;
+        } catch (payErr) {
+          toast(
+            apiErrorMessage(payErr, 'Đơn hàng đã được tạo nhưng chưa mở được cổng VNPay. Bạn có thể thanh toán lại trong chi tiết đơn.'),
+            { tone: 'error' }
+          );
+          navigate(`/orders/${createdOrder.id}`);
+          return;
+        }
+      }
+
+      await paymentApi.startPayment({ orderId: createdOrder.id, method: 'COD' }).catch(() => undefined);
       toast(`Đặt hàng thành công! Mã đơn ${createdOrder.orderCode}.`);
       navigate(`/orders/${createdOrder.id}`);
     } catch (err) {

@@ -3,6 +3,7 @@ import {
     CheckoutPreviewRequest,
     CheckoutPreviewResponse,
     CreateOrderRequest,
+    OrderDashboardSummary,
     OrderDetail,
     OrderStatus,
     OrderSummary,
@@ -26,8 +27,18 @@ export const orderApi = {
     await apiClient.get<OrderDetail>(`/staff/orders/${orderId}`)
   ).data,
 
+  getDashboardSummary: async (): Promise<OrderDashboardSummary> => (
+    await apiClient.get<OrderDashboardSummary>('/staff/orders/summary')
+  ).data,
+
   updateStatus: async (orderId: number, status: OrderStatus, note?: string): Promise<OrderDetail> => (
     await apiClient.put<OrderDetail>(`/staff/orders/${orderId}/status`, { status, note })
+  ).data,
+
+  cancelOrder: async (orderId: number, reason?: string): Promise<OrderDetail> => (
+    await apiClient.post<OrderDetail>(`/me/orders/${orderId}/cancel`, null, {
+      params: reason ? { reason } : undefined,
+    })
   ).data,
 
   previewCheckout: async (payload: CheckoutPreviewRequest): Promise<CheckoutPreviewResponse> => (

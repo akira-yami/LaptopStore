@@ -1,6 +1,9 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { DataTable, PageHeader, Pagination, SearchInput, SecondaryButton, SelectFilter } from '@/components/common/AdminUI';
-import { formatReviewDate, reviewMockStore } from '../../store/reviewMockStore';
+import { apiErrorMessage, useToast } from '@/components/ui';
+import { reviewApi } from '../../api/reviewApi';
+import { Review } from '../../types';
+import { formatReviewDate } from '../../utils/reviewFormat';
 import { Avatar, StarRating, VisibilityBadge } from '../../components/ReviewUI';
 
 const PAGE_SIZE = 10;
@@ -24,43 +27,69 @@ const monthKey = (iso: string) => {
 };
 
 const StaffReviewPage: React.FC = () => {
-    const [tab, setTab] = useState<VisibilityTab>('VISIBLE');
+    const toast = useToast();
+    const [tab, setTab] = useState<VisibilityTab>('ALL');
     const [keyword, setKeyword] = useState('');
     const [rating, setRating] = useState('ALL');
+    const [month, setMonth] = useState('ALL');
     const [selectedId, setSelectedId] = useState<number | null>(null);
     const [page, setPage] = useState(1);
-    // Tăng mỗi lần ẩn/hiện để đọc lại dữ liệu từ store
-    const [version, setVersion] = useState(0);
+
+    const [reviews, setReviews] = useState<Review[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+    const [updating, setUpdating] = useState(false);
     const cardRef = useRef<HTMLDivElement>(null);
 
-    const reviews = useMemo(() => reviewMockStore.getAllReviews(), [version]);
+    const loadReviews = useCallback(async () => {
+        try {
+            setLoading(true);
+            setError(null);
+            const params: { visible?: boolean; rating?: number; page: number; size: number } = {
+                page: 0,
+                size: 100
+            };
+            if (tab === 'VISIBLE') params.visible = true;
+            if (tab === 'HIDDEN') params.visible = false;
+            if (rating !== 'ALL') params.rating = Number(rating);
+
+            const res = await reviewApi.getStaffReviews(params);
+            setReviews(res.content ?? []);
+        } catch (err) {
+            setError(apiErrorMessage(err, 'Không thể tải danh sách đánh giá.'));
+        } finally {
+            setLoading(false);
+        }
+    }, [tab, rating]);
+
+    useEffect(() => {
+        void loadReviews();
+    }, [loadReviews]);
 
     const monthOptions = useMemo(() => {
         const keys = Array.from(new Set(reviews.map(r => monthKey(r.createdAt))));
         return [
+            { value: 'ALL', label: 'Tất cả thời gian' },
             ...keys.map(k => {
                 const [y, m] = k.split('-');
                 return { value: k, label: `Tháng ${m}, ${y}` };
-            }),
-            { value: 'ALL', label: 'Tất cả thời gian' }
+            })
         ];
     }, [reviews]);
-    const [month, setMonth] = useState(() => monthKey(reviewMockStore.getAllReviews()[0]?.createdAt ?? new Date().toISOString()));
 
     const filtered = useMemo(() => {
         const kw = keyword.trim().toLowerCase().replace(/^#/, '');
         return reviews.filter(
             r =>
-                (tab === 'ALL' || r.visible === (tab === 'VISIBLE')) &&
-                (rating === 'ALL' || r.rating === Number(rating)) &&
                 (month === 'ALL' || monthKey(r.createdAt) === month) &&
-                (!kw || r.productName.toLowerCase().includes(kw) || String(r.orderItemId).includes(kw))
+                (!kw ||
+                    r.productName.toLowerCase().includes(kw) ||
+                    r.variantName.toLowerCase().includes(kw) ||
+                    String(r.orderItemId).includes(kw))
         );
-    }, [reviews, tab, rating, month, keyword]);
+    }, [reviews, month, keyword]);
 
-    // Review đang xem chi tiết; nếu không còn trong bộ lọc thì lấy review mới nhất
     const selected = filtered.find(r => r.id === selectedId) ?? filtered[0];
-    // Ẩn/hiện có thể làm trang cuối trống, khi đó lùi về trang hợp lệ gần nhất
     const currentPage = Math.min(page, Math.max(1, Math.ceil(filtered.length / PAGE_SIZE)));
     const paged = filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
 
@@ -74,17 +103,30 @@ const StaffReviewPage: React.FC = () => {
         cardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     };
 
-    const handleToggleVisible = () => {
+    const handleToggleVisible = async () => {
         if (!selected) return;
         if (selected.visible && !window.confirm('Ẩn đánh giá này? Khách hàng khác sẽ không còn thấy nội dung này.')) return;
-        // TODO: thay bằng reviewApi.updateVisibility khi nối backend
-        reviewMockStore.setVisible(selected.id, !selected.visible);
-        setVersion(v => v + 1);
+        try {
+            setUpdating(true);
+            await reviewApi.updateVisibility(selected.id, !selected.visible);
+            toast(selected.visible ? 'Đã ẩn đánh giá.' : 'Đã hiện lại đánh giá.');
+            await loadReviews();
+        } catch (err) {
+            toast(apiErrorMessage(err, 'Không thể cập nhật trạng thái hiển thị đánh giá.'), { tone: 'error' });
+        } finally {
+            setUpdating(false);
+        }
     };
 
     return (
         <div className="min-h-full bg-[#F7F7FA] p-6 md:p-10">
             <PageHeader breadcrumb="Vận hành / Đánh giá" title="Đánh giá của khách hàng" subtitle="Giữ không gian đánh giá hữu ích và đáng tin cậy." />
+
+            {error && (
+                <div className="mb-6 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700" role="alert">
+                    {error}
+                </div>
+            )}
 
             <div className="flex flex-wrap gap-3 mb-8">
                 {tabs.map(t => (
@@ -110,15 +152,19 @@ const StaffReviewPage: React.FC = () => {
                 </div>
             </div>
 
-            {selected ? (
+            {loading ? (
+                <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-12 mb-8 text-center text-gray-500">
+                    Đang tải danh sách đánh giá...
+                </div>
+            ) : selected ? (
                 <div ref={cardRef} className="scroll-mt-6 bg-white rounded-2xl border border-gray-100 shadow-sm p-6 md:p-8 mb-8">
                     <div className="flex items-start justify-between gap-4">
                         <div className="flex items-center gap-5">
-                            <Avatar name={selected.customerName} />
+                            <Avatar name={selected.productName} />
                             <div>
-                                <p className="font-semibold text-gray-900">{selected.customerName}</p>
+                                <p className="font-semibold text-gray-900">{selected.productName}</p>
                                 <p className="mt-1 text-sm text-gray-500">
-                                    Dòng hàng #{selected.orderItemId} · {selected.productName} · {formatReviewDate(selected.createdAt)}
+                                    Dòng hàng #{selected.orderItemId} · {selected.variantName} · {formatReviewDate(selected.createdAt)}
                                 </p>
                             </div>
                         </div>
@@ -131,9 +177,9 @@ const StaffReviewPage: React.FC = () => {
                     </p>
 
                     <div className="flex flex-wrap items-center justify-between gap-4 mt-6 pt-6 border-t border-gray-100">
-                        <p className="text-sm text-gray-500">Đã mua hàng · {selected.sku}</p>
-                        <SecondaryButton onClick={handleToggleVisible} className="min-w-[240px]">
-                            {selected.visible ? 'Ẩn đánh giá' : 'Hiện lại đánh giá'}
+                        <p className="text-sm text-gray-500">Đã mua hàng · Biến thể #{selected.variantId}</p>
+                        <SecondaryButton disabled={updating} onClick={() => void handleToggleVisible()} className="min-w-[240px]">
+                            {updating ? 'Đang cập nhật...' : selected.visible ? 'Ẩn đánh giá' : 'Hiện lại đánh giá'}
                         </SecondaryButton>
                     </div>
                 </div>
@@ -143,7 +189,7 @@ const StaffReviewPage: React.FC = () => {
                 </div>
             )}
 
-            {selected && (
+            {!loading && selected && (
                 <>
                     <DataTable
                         headers={['Sản phẩm / Dòng hàng', 'Đánh giá', 'Nội dung', 'Ngày gửi', 'Hiển thị']}
@@ -165,7 +211,7 @@ const StaffReviewPage: React.FC = () => {
                                 <td className="px-4 py-5 font-semibold text-gray-900 whitespace-nowrap">
                                     {r.productName}
                                     <br />
-                                    Dòng hàng #{r.orderItemId}
+                                    <span className="text-xs font-normal text-gray-500">Dòng hàng #{r.orderItemId}</span>
                                 </td>
                                 <td className="px-4 py-5">
                                     <StarRating rating={r.rating} size="sm" className="text-gray-900" />

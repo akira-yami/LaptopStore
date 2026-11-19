@@ -1,12 +1,13 @@
 import { apiErrorMessage, formatDateTime, formatMoney, Icon, Modal, ORDER_STATUS, OrderStatusBadge, PageHeading, Pager, Spinner, useToast } from '@/components/ui';
+import { paymentApi } from '@/modules/payment/api/paymentApi';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { orderApi } from '../../api/orderApi';
 import { OrderDetail, OrderStatus, OrderSummary } from '../../types';
 
-// Khớp OrderStateMachine.VALID_TRANSITIONS ở backend.
+// Khớp OrderStateMachine.VALID_TRANSITIONS và chặn chuyển tay PENDING_PAYMENT -> CONFIRMED ở backend.
 const NEXT: Record<string, OrderStatus[]> = {
   CREATED: ['WAITING_CONFIRMATION', 'PENDING_PAYMENT'],
-  PENDING_PAYMENT: ['CONFIRMED', 'CANCELLED'],
+  PENDING_PAYMENT: ['CANCELLED'],
   WAITING_CONFIRMATION: ['CONFIRMED', 'CANCELLED'],
   CONFIRMED: ['PACKING', 'CANCELLED'],
   PACKING: ['SHIPPING'],
@@ -38,6 +39,8 @@ export const StaffOrderListPage = () => {
   const [keyword, setKeyword] = useState('');
   const [detail, setDetail] = useState<OrderDetail | null>(null);
   const [pending, setPending] = useState<{ order: OrderSummary; to: OrderStatus } | null>(null);
+  const [codTarget, setCodTarget] = useState<OrderSummary | null>(null);
+  const [recordingCod, setRecordingCod] = useState(false);
   const [note, setNote] = useState('');
   const [saving, setSaving] = useState(false);
 
@@ -87,6 +90,21 @@ export const StaffOrderListPage = () => {
     }
   };
 
+  const confirmCodPayment = async () => {
+    if (!codTarget) return;
+    try {
+      setRecordingCod(true);
+      await paymentApi.recordCodPayment({ orderId: codTarget.id });
+      toast(`Đã xác nhận thu tiền COD cho đơn #${codTarget.orderCode}.`);
+      setCodTarget(null);
+      await load(page);
+    } catch (err) {
+      toast(apiErrorMessage(err, 'Không thể xác nhận thu tiền COD (có thể đã thu hoặc đơn không phải COD).'), { tone: 'error' });
+    } finally {
+      setRecordingCod(false);
+    }
+  };
+
   return (
     <>
       <PageHeading
@@ -127,6 +145,15 @@ export const StaffOrderListPage = () => {
                   <td>
                     <div className="row" style={{ justifyContent: 'flex-end', gap: 8 }}>
                       <button type="button" className="btn sm" onClick={() => void openDetail(o.id)}>Xem</button>
+                      {o.status === 'DELIVERED' && (
+                        <button
+                          type="button"
+                          className="btn sm primary"
+                          onClick={() => setCodTarget(o)}
+                        >
+                          Thu tiền COD
+                        </button>
+                      )}
                       {(NEXT[o.status === 'PACKED' ? 'PACKING' : o.status] ?? []).map((to) => (
                         <button
                           key={to}
@@ -160,6 +187,26 @@ export const StaffOrderListPage = () => {
         <label className="field"><span>Ghi chú (tùy chọn)</span>
           <textarea maxLength={500} value={note} onChange={(e) => setNote(e.target.value)} style={{ minHeight: 70 }} />
         </label>
+      </Modal>
+
+      <Modal
+        open={!!codTarget}
+        title={codTarget ? `Xác nhận đã thu tiền COD đơn #${codTarget.orderCode}?` : ''}
+        onClose={() => setCodTarget(null)}
+        actions={(
+          <>
+            <button type="button" className="btn" onClick={() => setCodTarget(null)}>Hủy</button>
+            <button type="button" className="btn primary" disabled={recordingCod} onClick={() => void confirmCodPayment()}>
+              {recordingCod ? 'Đang lưu...' : 'Xác nhận đã thu tiền'}
+            </button>
+          </>
+        )}
+      >
+        {codTarget && (
+          <p className="muted">
+            Xác nhận shipper đã thu đủ <strong>{formatMoney(codTarget.totalAmount)}</strong> từ khách hàng <strong>{codTarget.recipientName}</strong>.
+          </p>
+        )}
       </Modal>
 
       <Modal open={!!detail} title={detail ? `Đơn #${detail.orderCode}` : ''} onClose={() => setDetail(null)} wide>

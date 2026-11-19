@@ -3,6 +3,7 @@ package org.akira.laptopstore.order.controller;
 import org.akira.laptopstore.order.dto.request.CheckoutPreviewRequest;
 import org.akira.laptopstore.order.dto.request.CreateOrderRequest;
 import org.akira.laptopstore.order.dto.response.CheckoutPreviewResponse;
+import org.akira.laptopstore.order.dto.response.OrderDashboardSummaryResponse;
 import org.akira.laptopstore.order.dto.response.OrderResponse;
 import org.akira.laptopstore.order.dto.response.OrderSummaryResponse;
 import org.akira.laptopstore.order.entity.enums.OrderStatus;
@@ -154,6 +155,31 @@ class OrderControllerTest {
                 .andExpect(status().isUnauthorized());
 
         verifyNoInteractions(orderService);
+    }
+
+    @Test
+    void staffSummaryEndpointRequiresStaffOrAdminAndReturnsTotals() throws Exception {
+        OrderDashboardSummaryResponse summary = OrderDashboardSummaryResponse.builder()
+                .totalOrders(18)
+                .pendingCount(5)
+                .inProgressCount(7)
+                .deliveredCount(5)
+                .deliveredRevenue(new BigDecimal("125000000"))
+                .build();
+        when(orderService.getDashboardSummary()).thenReturn(summary);
+
+        mockMvc.perform(get("/api/v1/staff/orders/summary").with(user(principal(42L, "ROLE_USER"))))
+                .andExpect(status().isForbidden());
+
+        mockMvc.perform(get("/api/v1/staff/orders/summary").with(user(principal(99L, "ROLE_STAFF"))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalOrders").value(18))
+                .andExpect(jsonPath("$.pendingCount").value(5))
+                .andExpect(jsonPath("$.inProgressCount").value(7))
+                .andExpect(jsonPath("$.deliveredCount").value(5))
+                .andExpect(jsonPath("$.deliveredRevenue").value(125000000));
+
+        verify(orderService).getDashboardSummary();
     }
 
     private CustomUserDetails principal(Long id, String role) {

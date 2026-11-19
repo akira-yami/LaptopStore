@@ -26,3 +26,20 @@ export const userApi = {
     await apiClient.delete(`/me/addresses/${id}`);
   },
 };
+
+export const adminUserApi = {
+  getAllUsers: async (): Promise<UserProfile[]> => {
+    const response = await apiClient.get<UserProfile[]>('/admin/users');
+    return response.data;
+  },
+
+  updateUserStatus: async (id: number, status: string): Promise<UserProfile> => {
+    const response = await apiClient.patch<UserProfile>(`/admin/users/${id}/status`, { status });
+    return response.data;
+  },
+
+  updateUserRoles: async (id: number, roles: string[]): Promise<UserProfile> => {
+    const response = await apiClient.patch<UserProfile>(`/admin/users/${id}/roles`, { roles });
+    return response.data;
+  },
+};

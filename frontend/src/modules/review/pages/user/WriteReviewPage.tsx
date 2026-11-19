@@ -1,23 +1,62 @@
-import React, { useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import React, { useEffect, useState } from 'react';
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { PrimaryButton, SecondaryButton } from '@/components/common/AdminUI';
-import { formatReviewDate, reviewMockStore } from '../../store/reviewMockStore';
+import { apiErrorMessage, useToast } from '@/components/ui';
+import { reviewApi } from '../../api/reviewApi';
+import { Review, ReviewableOrderItem } from '../../types';
+import { formatReviewDate } from '../../utils/reviewFormat';
 import { LaptopIllustration, PurchasedBadge, StarInput } from '../../components/ReviewUI';
 
 const MAX_COMMENT = 2000;
 
 const WriteReviewPage: React.FC = () => {
     const navigate = useNavigate();
+    const toast = useToast();
+    const location = useLocation();
     const { orderItemId } = useParams<{ orderItemId: string }>();
-    const item = reviewMockStore.getOrderItem(Number(orderItemId));
-    const existing = item ? reviewMockStore.getReviewByOrderItem(item.orderItemId) : undefined;
+    const numericOrderItemId = Number(orderItemId);
+    const navState = (location.state as Partial<ReviewableOrderItem> | null) ?? null;
 
-    const [rating, setRating] = useState(existing?.rating ?? 0);
-    const [comment, setComment] = useState(existing?.comment ?? '');
+    const [existing, setExisting] = useState<Review | null>(null);
+    const [loading, setLoading] = useState(true);
+    const [submitting, setSubmitting] = useState(false);
+    const [rating, setRating] = useState(0);
+    const [comment, setComment] = useState('');
     const [error, setError] = useState('');
     const [submitted, setSubmitted] = useState(false);
+    const [savedReview, setSavedReview] = useState<Review | null>(null);
 
-    if (!item) {
+    useEffect(() => {
+        if (!numericOrderItemId || Number.isNaN(numericOrderItemId)) {
+            setLoading(false);
+            return;
+        }
+        let cancelled = false;
+        setLoading(true);
+
+        reviewApi.getMyReviews(0, 100)
+            .then(page => {
+                if (cancelled) return;
+                const found = (page.content ?? []).find(r => r.orderItemId === numericOrderItemId) ?? null;
+                if (found) {
+                    setExisting(found);
+                    setRating(found.rating);
+                    setComment(found.comment ?? '');
+                }
+            })
+            .catch(() => {
+                // Nếu chưa có review hoặc lỗi tải lịch sử vẫn cho phép gửi đánh giá mới
+            })
+            .finally(() => {
+                if (!cancelled) setLoading(false);
+            });
+
+        return () => {
+            cancelled = true;
+        };
+    }, [numericOrderItemId]);
+
+    if (!numericOrderItemId || Number.isNaN(numericOrderItemId)) {
         return (
             <div className="max-w-6xl mx-auto px-4 py-16 text-center">
                 <h1 className="text-2xl font-bold text-gray-900">Không tìm thấy sản phẩm cần đánh giá</h1>
@@ -29,15 +68,35 @@ const WriteReviewPage: React.FC = () => {
         );
     }
 
-    const handleSubmit = (event: React.FormEvent) => {
+    const displayProductName = savedReview?.productName ?? existing?.productName ?? navState?.productName ?? `Sản phẩm #${numericOrderItemId}`;
+    const displayVariantName = savedReview?.variantName ?? existing?.variantName ?? navState?.variantName ?? `Dòng hàng #${numericOrderItemId}`;
+    const displayProductId = savedReview?.productId ?? existing?.productId ?? navState?.productId;
+    const displayOrderCode = navState?.orderCode;
+    const displayDeliveredAt = navState?.deliveredAt ?? existing?.createdAt;
+
+    const handleSubmit = async (event: React.FormEvent) => {
         event.preventDefault();
         if (!rating) {
             setError('Vui lòng chọn số sao trước khi gửi đánh giá.');
             return;
         }
-        // TODO: thay bằng reviewApi.createReview / updateReview khi nối backend
-        reviewMockStore.saveMyReview(item, rating, comment.trim());
-        setSubmitted(true);
+
+        try {
+            setSubmitting(true);
+            setError('');
+            const trimmed = comment.trim();
+            const res = existing
+                ? await reviewApi.updateReview(existing.id, { rating, comment: trimmed || undefined })
+                : await reviewApi.createReview({ orderItemId: numericOrderItemId, rating, comment: trimmed || undefined });
+            setExisting(res);
+            setSavedReview(res);
+            setSubmitted(true);
+            toast(existing ? 'Đã cập nhật đánh giá của bạn.' : 'Đã gửi đánh giá thành công!');
+        } catch (err) {
+            setError(apiErrorMessage(err, 'Không thể gửi đánh giá. Đảm bảo đơn hàng của bạn đã được giao thành công.'));
+        } finally {
+            setSubmitting(false);
+        }
     };
 
     return (
@@ -60,14 +119,22 @@ const WriteReviewPage: React.FC = () => {
                     <div className="mt-5">
                         <PurchasedBadge />
                     </div>
-                    <h2 className="mt-4 text-2xl font-bold text-gray-900">{item.productName}</h2>
-                    <p className="mt-3 text-sm text-gray-500">{item.variantName}</p>
+                    <h2 className="mt-4 text-2xl font-bold text-gray-900">{displayProductName}</h2>
+                    <p className="mt-3 text-sm text-gray-500">{displayVariantName}</p>
                     <hr className="my-6 border-gray-100" />
-                    <p className="font-semibold text-gray-900">Đơn hàng {item.orderCode}</p>
-                    <p className="mt-3 text-sm text-gray-500">Đã giao thành công · {formatReviewDate(item.deliveredAt)}</p>
+                    <p className="font-semibold text-gray-900">
+                        {displayOrderCode ? `Đơn hàng #${displayOrderCode}` : `Mã dòng hàng #${numericOrderItemId}`}
+                    </p>
+                    {displayDeliveredAt && (
+                        <p className="mt-3 text-sm text-gray-500">Đã giao thành công · {formatReviewDate(displayDeliveredAt)}</p>
+                    )}
                 </aside>
 
-                {submitted ? (
+                {loading ? (
+                    <section className="bg-white rounded-2xl border border-gray-200 p-10 text-center text-gray-500">
+                        Đang tải thông tin đánh giá...
+                    </section>
+                ) : submitted ? (
                     <section className="bg-white rounded-2xl border border-gray-200 p-6 md:p-10 text-center">
                         <div className="mx-auto flex items-center justify-center w-16 h-16 rounded-full bg-emerald-50 text-emerald-600">
                             <svg className="w-8 h-8" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
@@ -78,11 +145,13 @@ const WriteReviewPage: React.FC = () => {
                         <p className="mt-2 text-gray-500">Đánh giá của bạn đã được ghi nhận và hiển thị cho những người mua sau.</p>
                         <div className="flex flex-wrap justify-center gap-4 mt-8">
                             <SecondaryButton onClick={() => navigate('/orders')}>Quay lại đơn hàng</SecondaryButton>
-                            <PrimaryButton onClick={() => navigate(`/products/${item.productId}/reviews`)}>Xem đánh giá sản phẩm</PrimaryButton>
+                            {displayProductId && (
+                                <PrimaryButton onClick={() => navigate(`/products/${displayProductId}/reviews`)}>Xem đánh giá sản phẩm</PrimaryButton>
+                            )}
                         </div>
                     </section>
                 ) : (
-                    <form onSubmit={handleSubmit} noValidate className="bg-white rounded-2xl border border-gray-200 p-6 md:p-10">
+                    <form onSubmit={e => void handleSubmit(e)} noValidate className="bg-white rounded-2xl border border-gray-200 p-6 md:p-10">
                         <h2 className="text-2xl md:text-3xl font-bold text-gray-900">Bạn thấy chiếc laptop này thế nào?</h2>
 
                         <p className="mt-6 mb-5 text-sm font-semibold text-gray-900">Mức độ hài lòng của bạn</p>
@@ -93,7 +162,7 @@ const WriteReviewPage: React.FC = () => {
                                 setError('');
                             }}
                         />
-                        {error && <p className="mt-1 text-sm text-red-500">{error}</p>}
+                        {error && <p className="mt-2 text-sm text-red-500" role="alert">{error}</p>}
 
                         <label className="block mt-6 rounded-2xl border border-gray-200 p-5 focus-within:border-[#C2410C] focus-within:ring-2 focus-within:ring-orange-100 transition">
                             <span className="block text-sm font-semibold text-gray-900">Chia sẻ cảm nhận</span>
@@ -123,8 +192,8 @@ const WriteReviewPage: React.FC = () => {
                             <SecondaryButton type="button" className="min-w-[200px]" onClick={() => navigate('/orders')}>
                                 Quay lại đơn hàng
                             </SecondaryButton>
-                            <PrimaryButton type="submit" className="min-w-[200px]">
-                                {existing ? 'Cập nhật đánh giá' : 'Gửi đánh giá'}
+                            <PrimaryButton type="submit" disabled={submitting} className="min-w-[200px]">
+                                {submitting ? 'Đang gửi...' : existing ? 'Cập nhật đánh giá' : 'Gửi đánh giá'}
                             </PrimaryButton>
                         </div>
                     </form>

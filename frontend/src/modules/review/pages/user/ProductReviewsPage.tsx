@@ -1,22 +1,80 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Pagination, SecondaryButton } from '@/components/common/AdminUI';
-import { formatReviewDate, reviewMockStore } from '../../store/reviewMockStore';
+import { apiErrorMessage } from '@/components/ui';
+import { catalogApi } from '@/modules/catalog/api/catalogApi';
+import { reviewApi } from '../../api/reviewApi';
+import { Review, ReviewSummary } from '../../types';
+import { formatReviewDate } from '../../utils/reviewFormat';
 import { PurchasedBadge, StarRating } from '../../components/ReviewUI';
 
 const PAGE_SIZE = 5;
+
+const EMPTY_SUMMARY: ReviewSummary = {
+    productId: 0,
+    averageRating: 0,
+    totalReviews: 0,
+    ratingCounts: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 }
+};
 
 const ProductReviewsPage: React.FC = () => {
     const navigate = useNavigate();
     const { productId } = useParams<{ productId: string }>();
     const id = Number(productId);
-    const product = reviewMockStore.getProduct(id);
 
+    const [productName, setProductName] = useState<string>('Sản phẩm');
+    const [summary, setSummary] = useState<ReviewSummary>(EMPTY_SUMMARY);
+    const [reviews, setReviews] = useState<Review[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
     const [starFilter, setStarFilter] = useState<number | null>(null);
     const [page, setPage] = useState(1);
 
-    const summary = useMemo(() => reviewMockStore.getSummary(id), [id]);
-    const reviews = useMemo(() => reviewMockStore.getVisibleByProduct(id), [id]);
+    useEffect(() => {
+        if (!id || Number.isNaN(id)) {
+            setLoading(false);
+            return;
+        }
+        let cancelled = false;
+        setLoading(true);
+        setError(null);
+
+        Promise.all([
+            reviewApi.getProductReviewSummary(id),
+            reviewApi.getProductReviews(id, 0, 100),
+            catalogApi.getProductById(id).catch(() => null)
+        ])
+            .then(([sumRes, pageRes, productRes]) => {
+                if (cancelled) return;
+                setSummary({
+                    ...sumRes,
+                    averageRating: Number(sumRes.averageRating ?? 0),
+                    totalReviews: Number(sumRes.totalReviews ?? 0),
+                    ratingCounts: {
+                        1: Number(sumRes.ratingCounts?.[1] ?? 0),
+                        2: Number(sumRes.ratingCounts?.[2] ?? 0),
+                        3: Number(sumRes.ratingCounts?.[3] ?? 0),
+                        4: Number(sumRes.ratingCounts?.[4] ?? 0),
+                        5: Number(sumRes.ratingCounts?.[5] ?? 0)
+                    }
+                });
+                setReviews(pageRes.content ?? []);
+                setProductName(productRes?.name ?? pageRes.content?.[0]?.productName ?? 'Sản phẩm');
+            })
+            .catch(err => {
+                if (!cancelled) {
+                    setError(apiErrorMessage(err, 'Không thể tải đánh giá sản phẩm.'));
+                }
+            })
+            .finally(() => {
+                if (!cancelled) setLoading(false);
+            });
+
+        return () => {
+            cancelled = true;
+        };
+    }, [id]);
+
     const filtered = starFilter ? reviews.filter(r => r.rating === starFilter) : reviews;
     const paged = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
@@ -30,7 +88,13 @@ const ProductReviewsPage: React.FC = () => {
             <h1 className="text-3xl font-bold text-gray-900">Đánh giá từ người đã mua</h1>
             <p className="mt-2 text-gray-500">Những trải nghiệm giúp bạn chọn máy tự tin hơn.</p>
 
-            <h2 className="mt-10 text-center text-3xl font-bold text-gray-900">{product?.productName ?? 'Sản phẩm'}</h2>
+            <h2 className="mt-10 text-center text-3xl font-bold text-gray-900">{productName}</h2>
+
+            {error && (
+                <div className="mt-6 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700" role="alert">
+                    {error}
+                </div>
+            )}
 
             <section className="mt-8 bg-white rounded-2xl border border-gray-200 p-6 md:p-10 grid grid-cols-1 md:grid-cols-2 gap-8 items-center">
                 <div>
@@ -46,7 +110,7 @@ const ProductReviewsPage: React.FC = () => {
                 {/* Phân bố số sao, bấm vào một dòng để lọc */}
                 <div className="space-y-2">
                     {([5, 4, 3, 2, 1] as const).map(star => {
-                        const count = summary.ratingCounts[star];
+                        const count = summary.ratingCounts[star] ?? 0;
                         const percent = summary.totalReviews ? (count / summary.totalReviews) * 100 : 0;
                         const active = starFilter === star;
                         return (
@@ -79,7 +143,11 @@ const ProductReviewsPage: React.FC = () => {
             )}
 
             <div className="mt-8 space-y-8">
-                {paged.length === 0 ? (
+                {loading ? (
+                    <div className="bg-white rounded-2xl border border-gray-200 p-12 text-center text-gray-500">
+                        Đang tải đánh giá...
+                    </div>
+                ) : paged.length === 0 ? (
                     <div className="bg-white rounded-2xl border border-gray-200 p-12 text-center text-gray-400">
                         Sản phẩm chưa có đánh giá nào.
                     </div>
@@ -87,8 +155,8 @@ const ProductReviewsPage: React.FC = () => {
                     paged.map(r => (
                         <article key={r.id} className="bg-white rounded-2xl border border-gray-200 p-6 md:p-8">
                             <div className="flex flex-wrap items-start justify-between gap-3">
-                                <div className="flex flex-wrap items-center gap-6">
-                                    <p className="font-semibold text-gray-900">{r.customerName}</p>
+                                <div className="flex flex-wrap items-center gap-4">
+                                    <p className="font-semibold text-gray-900">Khách đã mua · {r.variantName}</p>
                                     <PurchasedBadge />
                                 </div>
                                 <time className="text-sm text-gray-500">{formatReviewDate(r.createdAt)}</time>

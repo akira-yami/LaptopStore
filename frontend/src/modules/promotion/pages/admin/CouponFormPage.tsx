@@ -1,10 +1,10 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { couponMockStore } from '../../store/couponMockStore';
-import { DiscountType } from '../../types';
+import { apiErrorMessage, useToast } from '@/components/ui';
+import { couponApi } from '../../api/couponApi';
+import { Coupon, DiscountType } from '../../types';
 import { PageHeader, PrimaryButton, SecondaryButton } from '../../components/PromotionUI';
 import {
-    formatDate,
     formatMoneyInput,
     formatShortMoney,
     formatVnd,
@@ -51,26 +51,78 @@ const Field: React.FC<{ label: string; required?: boolean; error?: string; child
     </label>
 );
 
+const INITIAL_FORM: FormState = {
+    code: '',
+    discountType: 'FIXED',
+    discountValue: 0,
+    minOrderAmount: 0,
+    maxDiscount: 0,
+    active: true,
+    usageLimit: '',
+    usagePerUser: '1',
+    startsAt: '',
+    endsAt: ''
+};
+
 const CouponFormPage: React.FC = () => {
     const navigate = useNavigate();
+    const toast = useToast();
     const { id } = useParams<{ id: string }>();
-    const coupon = id ? couponMockStore.getCouponById(Number(id)) : undefined;
-    const isEdit = Boolean(coupon);
+    const couponId = id ? Number(id) : null;
+    const isEdit = Boolean(couponId);
 
-    const [form, setForm] = useState<FormState>(() => ({
-        code: coupon?.code ?? '',
-        discountType: coupon?.discountType ?? 'FIXED',
-        discountValue: coupon?.discountValue ?? 0,
-        minOrderAmount: coupon?.minOrderAmount ?? 0,
-        maxDiscount: coupon?.maxDiscount ?? 0,
-        active: coupon?.active ?? true,
-        usageLimit: coupon?.usageLimit ? String(coupon.usageLimit) : '',
-        usagePerUser: coupon?.usagePerUser ? String(coupon.usagePerUser) : '1',
-        startsAt: coupon ? toDateTimeLocal(coupon.startsAt) : '',
-        endsAt: coupon ? toDateTimeLocal(coupon.endsAt) : ''
-    }));
+    const [coupon, setCoupon] = useState<Coupon | null>(null);
+    const [usedCount, setUsedCount] = useState(0);
+    const [loading, setLoading] = useState(isEdit);
+    const [notFound, setNotFound] = useState(false);
+    const [saving, setSaving] = useState(false);
+    const [toggling, setToggling] = useState(false);
+    const [submitError, setSubmitError] = useState<string | null>(null);
+
+    const [form, setForm] = useState<FormState>(INITIAL_FORM);
     const [errors, setErrors] = useState<FormErrors>({});
-    const [active, setActive] = useState(coupon?.active ?? true);
+
+    useEffect(() => {
+        if (!couponId) {
+            setLoading(false);
+            return;
+        }
+        let cancelled = false;
+        setLoading(true);
+        setNotFound(false);
+
+        Promise.all([
+            couponApi.getCouponById(couponId),
+            couponApi.getUsagesByCoupon(couponId).catch(() => [])
+        ])
+            .then(([loaded, usageList]) => {
+                if (cancelled) return;
+                setCoupon(loaded);
+                setUsedCount(usageList.filter(u => u.status === 'ACTIVE').length);
+                setForm({
+                    code: loaded.code,
+                    discountType: loaded.discountType,
+                    discountValue: Number(loaded.discountValue) || 0,
+                    minOrderAmount: Number(loaded.minOrderAmount) || 0,
+                    maxDiscount: Number(loaded.maxDiscount) || 0,
+                    active: loaded.active,
+                    usageLimit: loaded.usageLimit != null ? String(loaded.usageLimit) : '',
+                    usagePerUser: loaded.usagePerUser != null ? String(loaded.usagePerUser) : '',
+                    startsAt: toDateTimeLocal(loaded.startsAt),
+                    endsAt: toDateTimeLocal(loaded.endsAt)
+                });
+            })
+            .catch(() => {
+                if (!cancelled) setNotFound(true);
+            })
+            .finally(() => {
+                if (!cancelled) setLoading(false);
+            });
+
+        return () => {
+            cancelled = true;
+        };
+    }, [couponId]);
 
     const update = <K extends keyof FormState>(key: K, value: FormState[K]) => {
         setForm(prev => ({ ...prev, [key]: value }));
@@ -78,7 +130,6 @@ const CouponFormPage: React.FC = () => {
     };
 
     const isFixed = form.discountType === 'FIXED';
-    // Loại cố định thì mức giảm tối đa chính là giá trị giảm
     const effectiveMax = isFixed ? form.discountValue : form.maxDiscount;
 
     const preview = useMemo(() => {
@@ -96,16 +147,13 @@ const CouponFormPage: React.FC = () => {
         return { title, detail: `${parts.join('; ')}.` };
     }, [form, isFixed]);
 
-    const subtitle =
-        coupon?.description ??
-        (form.minOrderAmount
-            ? `Giảm ${isFixed ? 'trực tiếp' : `${form.discountValue || 0}%`} cho đơn hàng từ ${formatShortMoney(form.minOrderAmount)} đồng.`
-            : 'Điền thông tin để tạo mã giảm giá mới.');
+    const subtitle = form.minOrderAmount
+        ? `Giảm ${isFixed ? 'trực tiếp' : `${form.discountValue || 0}%`} cho đơn hàng từ ${formatShortMoney(form.minOrderAmount)} đồng.`
+        : 'Điền thông tin để thiết lập mã giảm giá.';
 
     const validate = (): FormErrors => {
         const e: FormErrors = {};
         if (!CODE_PATTERN.test(form.code)) e.code = 'Mã gồm 3–30 ký tự chữ, số, "_" hoặc "-".';
-        else if (couponMockStore.isCodeTaken(form.code, coupon?.id)) e.code = 'Mã giảm giá đã tồn tại.';
 
         if (form.discountValue <= 0) e.discountValue = 'Giá trị giảm phải lớn hơn 0.';
         else if (!isFixed && form.discountValue > 100) e.discountValue = 'Phần trăm giảm tối đa là 100.';
@@ -122,40 +170,74 @@ const CouponFormPage: React.FC = () => {
         return e;
     };
 
-    const handleSubmit = (event: React.FormEvent) => {
+    const handleSubmit = async (event: React.FormEvent) => {
         event.preventDefault();
         const e = validate();
         setErrors(e);
         if (Object.keys(e).length > 0) return;
 
-        // TODO: thay bằng couponApi.createCoupon / updateCoupon khi nối backend
-        couponMockStore.saveCoupon({
-            id: coupon?.id,
-            code: form.code.toUpperCase(),
-            description: coupon?.description,
+        const payload = {
+            code: form.code.trim().toUpperCase(),
             discountType: form.discountType,
             discountValue: form.discountValue,
-            maxDiscount: effectiveMax || null,
-            minOrderAmount: form.minOrderAmount || null,
+            maxDiscount: effectiveMax > 0 ? effectiveMax : null,
+            minOrderAmount: form.minOrderAmount > 0 ? form.minOrderAmount : null,
             usageLimit: form.usageLimit ? Number(form.usageLimit) : null,
             usagePerUser: form.usagePerUser ? Number(form.usagePerUser) : null,
             startsAt: fromDateTimeLocal(form.startsAt),
-            endsAt: fromDateTimeLocal(form.endsAt),
-            active: form.active
-        });
-        navigate('/admin/promotions');
+            endsAt: fromDateTimeLocal(form.endsAt)
+        };
+
+        try {
+            setSaving(true);
+            setSubmitError(null);
+            if (isEdit && couponId) {
+                const updated = await couponApi.updateCoupon(couponId, payload);
+                if (updated.active !== form.active) {
+                    await couponApi.setActive(couponId, form.active);
+                }
+                toast(`Đã cập nhật mã giảm giá ${updated.code}.`);
+            } else {
+                const created = await couponApi.createCoupon(payload);
+                if (!form.active) {
+                    await couponApi.setActive(created.id, false);
+                }
+                toast(`Đã tạo mã giảm giá ${created.code}.`);
+            }
+            navigate('/admin/promotions');
+        } catch (err) {
+            setSubmitError(apiErrorMessage(err, 'Không thể lưu mã giảm giá. Vui lòng kiểm tra lại dữ liệu.'));
+        } finally {
+            setSaving(false);
+        }
     };
 
-    const handleToggleActive = () => {
+    const handleToggleActive = async () => {
         if (!coupon) return;
-        const next = !active;
+        const next = !coupon.active;
         if (!next && !window.confirm(`Tạm ngưng mã ${coupon.code}? Khách hàng sẽ không thể áp dụng mã này.`)) return;
-        couponMockStore.setActive(coupon.id, next);
-        setActive(next);
-        update('active', next);
+        try {
+            setToggling(true);
+            const updated = await couponApi.setActive(coupon.id, next);
+            setCoupon(updated);
+            update('active', updated.active);
+            toast(updated.active ? `Đã kích hoạt lại mã ${updated.code}.` : `Đã tạm ngưng mã ${updated.code}.`);
+        } catch (err) {
+            setSubmitError(apiErrorMessage(err, 'Không thể đổi trạng thái mã giảm giá.'));
+        } finally {
+            setToggling(false);
+        }
     };
 
-    if (id && !coupon) {
+    if (loading) {
+        return (
+            <div className="min-h-full bg-[#F7F7FA] p-6 md:p-10 text-sm text-gray-500">
+                Đang tải thông tin mã giảm giá...
+            </div>
+        );
+    }
+
+    if (isEdit && (notFound || !coupon)) {
         return (
             <div className="min-h-full bg-[#F7F7FA] p-6 md:p-10">
                 <p className="text-gray-600">Không tìm thấy mã giảm giá.</p>
@@ -174,7 +256,13 @@ const CouponFormPage: React.FC = () => {
                 subtitle="Điều kiện rõ ràng giúp khách dễ dùng, cửa hàng dễ quản lý."
             />
 
-            <form onSubmit={handleSubmit} noValidate className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 md:p-8">
+            {submitError && (
+                <div className="mb-6 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700" role="alert">
+                    {submitError}
+                </div>
+            )}
+
+            <form onSubmit={e => void handleSubmit(e)} noValidate className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 md:p-8">
                 <h2 className="text-2xl font-bold text-gray-900">{isEdit ? `Mã ${coupon!.code}` : 'Mã giảm giá mới'}</h2>
                 <p className="mt-2 mb-6 text-sm text-gray-500">{subtitle}</p>
 
@@ -276,7 +364,7 @@ const CouponFormPage: React.FC = () => {
                         />
                     </Field>
                     <Field label="Đã sử dụng">
-                        <input value={`${coupon?.usedCount ?? 0} lượt`} disabled className={inputClass()} />
+                        <input value={`${usedCount} lượt`} disabled className={inputClass()} />
                     </Field>
                 </div>
 
@@ -315,25 +403,20 @@ const CouponFormPage: React.FC = () => {
                     <SecondaryButton type="button" onClick={() => navigate('/admin/promotions')}>
                         Quay lại khuyến mãi
                     </SecondaryButton>
-                    <PrimaryButton type="submit" className="px-16">
-                        Lưu mã giảm giá
+                    <PrimaryButton type="submit" disabled={saving} className="px-16">
+                        {saving ? 'Đang lưu...' : 'Lưu mã giảm giá'}
                     </PrimaryButton>
                 </div>
             </form>
 
-            {isEdit && (
-                <div className="flex flex-wrap items-center justify-between gap-4 mt-6">
-                    <p className="text-xs text-gray-500">
-                        Đã tạo ngày {formatDate(coupon!.createdAt)} · Cập nhật gần nhất {formatDate(coupon!.updatedAt)}
-                    </p>
-                    <div className="flex gap-4">
-                        <SecondaryButton className="min-w-[170px] border-transparent" onClick={() => navigate(`/admin/promotions/${coupon!.id}/usages`)}>
-                            Lịch sử sử dụng
-                        </SecondaryButton>
-                        <SecondaryButton className="min-w-[170px]" onClick={handleToggleActive}>
-                            {active ? 'Tạm ngưng mã' : 'Kích hoạt lại mã'}
-                        </SecondaryButton>
-                    </div>
+            {isEdit && coupon && (
+                <div className="flex flex-wrap items-center justify-end gap-4 mt-6">
+                    <SecondaryButton className="min-w-[170px] border-transparent" onClick={() => navigate(`/admin/promotions/${coupon.id}/usages`)}>
+                        Lịch sử sử dụng
+                    </SecondaryButton>
+                    <SecondaryButton className="min-w-[170px]" disabled={toggling} onClick={() => void handleToggleActive()}>
+                        {coupon.active ? 'Tạm ngưng mã' : 'Kích hoạt lại mã'}
+                    </SecondaryButton>
                 </div>
             )}
         </div>
