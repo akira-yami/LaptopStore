@@ -22,4 +22,7 @@ public interface OrderItemRepository extends JpaRepository<OrderItem, Long> {
 
     @Query("select oi from OrderItem oi join fetch oi.order where oi.id in :ids")
     List<OrderItem> findAllWithOrderByIdIn(@Param("ids") Collection<Long> ids);
+
+    @Query("select oi.order.id, coalesce(sum(oi.quantity), 0) from OrderItem oi where oi.order.id in :orderIds group by oi.order.id")
+    List<Object[]> sumQuantitiesByOrderIds(@Param("orderIds") Collection<Long> orderIds);
 }

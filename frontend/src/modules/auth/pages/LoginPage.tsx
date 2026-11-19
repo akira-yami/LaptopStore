@@ -1,16 +1,15 @@
 import { useAuth } from '@/app/providers/AuthProvider';
+import { getLoginDestination, type ReturnLocation } from '@/app/router/workspacePaths';
 import { apiErrorMessage, useToast } from '@/components/ui';
 import React, { useState } from 'react';
 import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { AuthLayout } from '../components/AuthLayout';
 
-type FromState = { from?: { pathname?: string; search?: string } };
-
 export const LoginPage: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const toast = useToast();
-  const { login, isAuthenticated, isLoading } = useAuth();
+  const { login, user, isLoading } = useAuth();
 
   const [email, setEmail] = useState<string>('');
   const [password, setPassword] = useState<string>('');
@@ -18,11 +17,10 @@ export const LoginPage: React.FC = () => {
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
-  const from = (location.state as FromState | null)?.from;
-  const redirectPath = from?.pathname && from.pathname !== '/login' ? `${from.pathname}${from.search ?? ''}` : '/';
+  const from = (location.state as { from?: ReturnLocation } | null)?.from;
 
-  if (!isLoading && isAuthenticated && !loading) {
-    return <Navigate to={redirectPath} replace />;
+  if (!isLoading && user && !loading) {
+    return <Navigate to={getLoginDestination(user.roles, from)} replace />;
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -36,9 +34,9 @@ export const LoginPage: React.FC = () => {
 
     try {
       setLoading(true);
-      await login({ email: email.trim(), password });
+      const profile = await login({ email: email.trim(), password });
       toast('Đăng nhập thành công. Chào mừng bạn trở lại!');
-      navigate(redirectPath, { replace: true });
+      navigate(getLoginDestination(profile.roles, from), { replace: true });
     } catch (err: unknown) {
       setError(apiErrorMessage(err, 'Đăng nhập không thành công. Vui lòng kiểm tra lại email và mật khẩu.'));
     } finally {

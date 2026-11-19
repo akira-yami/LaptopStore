@@ -6,8 +6,10 @@ import org.akira.laptopstore.cart.dto.response.CartSnapshot;
 import org.akira.laptopstore.cart.service.CartService;
 import org.akira.laptopstore.catalog.dto.response.CheckoutVariantSnapshot;
 import org.akira.laptopstore.catalog.service.CatalogCheckoutService;
+import org.akira.laptopstore.exception.BusinessException;
 import org.akira.laptopstore.exception.ResourceNotFoundException;
 import org.akira.laptopstore.exception.ValidationException;
+import org.springframework.http.HttpStatus;
 import org.akira.laptopstore.inventory.service.InventoryService;
 import org.akira.laptopstore.order.dto.request.CheckoutPreviewRequest;
 import org.akira.laptopstore.order.dto.request.CreateOrderRequest;
@@ -20,8 +22,8 @@ import org.akira.laptopstore.order.mapper.OrderMapper;
 import org.akira.laptopstore.order.repository.OrderItemRepository;
 import org.akira.laptopstore.order.repository.OrderRepository;
 import org.akira.laptopstore.order.repository.OrderStatusHistoryRepository;
+import org.akira.laptopstore.order.service.impl.OrderCheckoutSupport;
 import org.akira.laptopstore.order.service.impl.OrderServiceImpl;
-import org.akira.laptopstore.order.statemachine.OrderStateMachine;
 import org.akira.laptopstore.promotion.dto.response.CouponEvaluation;
 import org.akira.laptopstore.promotion.service.CouponService;
 import org.akira.laptopstore.user.dto.AddressResponse;
@@ -64,6 +66,7 @@ class OrderServiceImplTest {
 
     @BeforeEach
     void setUp() {
+        OrderCheckoutSupport checkoutSupport = new OrderCheckoutSupport(addressService, couponService);
         service = new OrderServiceImpl(
                 orders,
                 orderItems,
@@ -72,9 +75,8 @@ class OrderServiceImplTest {
                 cartService,
                 catalogCheckoutService,
                 inventoryService,
-                addressService,
                 couponService,
-                new OrderStateMachine()
+                checkoutSupport
         );
     }
 
@@ -108,8 +110,8 @@ class OrderServiceImplTest {
     void orderListsContainTheQuantityAcrossAllLines() {
         Order order = order(10L, 42L);
         when(orders.findByUserId(42L, PageRequest.of(0, 20))).thenReturn(new PageImpl<>(List.of(order)));
-        when(orderItems.findByOrderId(10L)).thenReturn(List.of(
-                OrderItem.builder().quantity(2).build(), OrderItem.builder().quantity(1).build()));
+        when(orderItems.sumQuantitiesByOrderIds(List.of(10L)))
+                .thenReturn(List.<Object[]>of(new Object[]{10L, 3L}));
 
         var result = service.getOwnOrders(42L, PageRequest.of(0, 20));
 
@@ -273,7 +275,6 @@ class OrderServiceImplTest {
         Order order = order(10L, 42L);
         order.setStatus(OrderStatus.CONFIRMED);
         when(orders.findByIdForUpdate(10L)).thenReturn(Optional.of(order));
-        when(orders.findById(10L)).thenReturn(Optional.of(order));
         when(histories.findByOrderIdOrderByChangedAtDesc(10L)).thenReturn(List.of());
 
         var response = service.updateOrderStatus(99L, 10L, new UpdateOrderStatusRequest(OrderStatus.PACKING, "Packed by staff"));
@@ -289,7 +290,6 @@ class OrderServiceImplTest {
         order.setStatus(OrderStatus.WAITING_CONFIRMATION);
         order.setCouponCodeSnapshot("DISCOUNT10");
         when(orders.findByIdForUpdate(10L)).thenReturn(Optional.of(order));
-        when(orders.findById(10L)).thenReturn(Optional.of(order));
         when(orderItems.findByOrderId(10L)).thenReturn(List.of(OrderItem.builder()
                 .id(20L).productId(1L).variantId(5L).quantity(2).unitPrice(BigDecimal.TEN).build()));
         when(histories.findByOrderIdOrderByChangedAtDesc(10L)).thenReturn(List.of());
@@ -340,7 +340,6 @@ class OrderServiceImplTest {
         Order order = order(10L, 42L);
         order.setStatus(OrderStatus.CANCELLED);
         when(orders.findByIdForUpdate(10L)).thenReturn(Optional.of(order));
-        when(orders.findById(10L)).thenReturn(Optional.of(order));
         assertEquals(OrderStatus.CANCELLED, service.cancelOrder(42L, 10L, null).getStatus());
         verifyNoInteractions(inventoryService, couponService);
         verify(histories, never()).save(any());
@@ -367,6 +366,110 @@ class OrderServiceImplTest {
         assertThrows(ValidationException.class, () -> service.updateOrderStatus(99L, 10L,
                 new UpdateOrderStatusRequest(OrderStatus.CONFIRMED, null)));
         verify(orders, never()).save(any());
+    }
+
+    @Test
+    void getOwnOrdersDoesNotTriggerNPlusOnePerOrder() {
+        Order first = order(10L, 42L);
+        Order second = order(11L, 42L);
+        when(orders.findByUserId(42L, PageRequest.of(0, 20)))
+                .thenReturn(new PageImpl<>(List.of(first, second)));
+        when(orderItems.sumQuantitiesByOrderIds(List.of(10L, 11L)))
+                .thenReturn(List.<Object[]>of(new Object[]{10L, 3L}, new Object[]{11L, 2L}));
+
+        var page = service.getOwnOrders(42L, PageRequest.of(0, 20));
+
+        assertEquals(3, page.getContent().get(0).getTotalItems());
+        assertEquals(2, page.getContent().get(1).getTotalItems());
+        verify(orderItems, times(1)).sumQuantitiesByOrderIds(List.of(10L, 11L));
+        verify(orderItems, never()).findByOrderId(any());
+    }
+
+    @Test
+    void createOrderWithSameIdempotencyKeyAndSamePayloadReturnsExistingOrder() {
+        Order previous = order(100L, 42L);
+        previous.setStatus(OrderStatus.WAITING_CONFIRMATION);
+        previous.setIdempotencyKey("idem-same-001");
+        when(orders.findByIdempotencyKeyAndUserId("idem-same-001", 42L))
+                .thenReturn(Optional.of(previous));
+        when(histories.findByOrderIdOrderByChangedAtDesc(100L)).thenReturn(List.of(
+                OrderStatusHistory.builder().id(1L).fromStatus(null).toStatus(OrderStatus.WAITING_CONFIRMATION).build()
+        ));
+        when(orderItems.findByOrderId(100L)).thenReturn(List.of());
+
+        CreateOrderRequest request = CreateOrderRequest.builder()
+                .recipientName("Nguyen Van A")
+                .recipientPhone("0900000000")
+                .shippingAddress("Ho Chi Minh City")
+                .paymentMethod("COD")
+                .idempotencyKey("idem-same-001")
+                .build();
+
+        var response = service.createOrder(42L, request);
+
+        assertEquals(100L, response.getId());
+        verifyNoInteractions(cartService, catalogCheckoutService, inventoryService);
+    }
+
+    @Test
+    void createOrderWithSameIdempotencyKeyAndDifferentPaymentMethodThrowsConflict() {
+        Order previous = order(100L, 42L);
+        previous.setStatus(OrderStatus.WAITING_CONFIRMATION);
+        previous.setIdempotencyKey("idem-conflict-pm");
+        when(orders.findByIdempotencyKeyAndUserId("idem-conflict-pm", 42L))
+                .thenReturn(Optional.of(previous));
+        when(histories.findByOrderIdOrderByChangedAtDesc(100L)).thenReturn(List.of(
+                OrderStatusHistory.builder().id(1L).fromStatus(null).toStatus(OrderStatus.WAITING_CONFIRMATION).build()
+        ));
+
+        CreateOrderRequest request = CreateOrderRequest.builder()
+                .recipientName("Nguyen Van A")
+                .recipientPhone("0900000000")
+                .shippingAddress("Ho Chi Minh City")
+                .paymentMethod("VNPAY")
+                .idempotencyKey("idem-conflict-pm")
+                .build();
+
+        BusinessException ex = assertThrows(BusinessException.class, () -> service.createOrder(42L, request));
+        assertEquals(HttpStatus.CONFLICT, ex.getStatus());
+        assertEquals("IDEMPOTENCY_CONFLICT", ex.getCode());
+    }
+
+    @Test
+    void createOrderWithSameIdempotencyKeyAndDifferentPayloadThrowsConflict() {
+        Order previous = order(100L, 42L);
+        previous.setStatus(OrderStatus.WAITING_CONFIRMATION);
+        previous.setIdempotencyKey("idem-conflict-addr");
+        when(orders.findByIdempotencyKeyAndUserId("idem-conflict-addr", 42L))
+                .thenReturn(Optional.of(previous));
+        when(histories.findByOrderIdOrderByChangedAtDesc(100L)).thenReturn(List.of(
+                OrderStatusHistory.builder().id(1L).fromStatus(null).toStatus(OrderStatus.WAITING_CONFIRMATION).build()
+        ));
+
+        CreateOrderRequest request = CreateOrderRequest.builder()
+                .recipientName("Nguyen Van B")
+                .recipientPhone("0900000000")
+                .shippingAddress("Ha Noi")
+                .paymentMethod("COD")
+                .idempotencyKey("idem-conflict-addr")
+                .build();
+
+        BusinessException ex = assertThrows(BusinessException.class, () -> service.createOrder(42L, request));
+        assertEquals(HttpStatus.CONFLICT, ex.getStatus());
+        assertEquals("IDEMPOTENCY_CONFLICT", ex.getCode());
+    }
+
+    @Test
+    void getStaffOrderReadsOrderOnlyOnce() {
+        Order order = order(10L, 42L);
+        when(orders.findById(10L)).thenReturn(Optional.of(order));
+        when(orderItems.findByOrderId(10L)).thenReturn(List.of());
+        when(histories.findByOrderIdOrderByChangedAtDesc(10L)).thenReturn(List.of());
+
+        var response = service.getStaffOrder(10L);
+
+        assertEquals(10L, response.getId());
+        verify(orders, times(1)).findById(10L);
     }
 
     private Order order(Long id, Long userId) {

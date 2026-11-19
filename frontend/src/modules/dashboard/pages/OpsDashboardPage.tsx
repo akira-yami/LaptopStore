@@ -1,8 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { useAuth } from '@/app/providers/AuthProvider';
 import { formatDateTime, formatMoney, Icon, IconName, OrderStatusBadge, PageHeading } from '@/components/ui';
-import { ROLES } from '@/constants/roles';
 import { catalogApi } from '@/modules/catalog/api/catalogApi';
 import { inventoryApi } from '@/modules/inventory/api/inventoryApi';
 import { InventoryStock } from '@/modules/inventory/types';
@@ -21,9 +19,8 @@ const Metric: React.FC<{ label: string; value: React.ReactNode; sub: string; ico
 );
 
 /** Tổng quan Staff/Admin: số liệu lấy trực tiếp từ API đơn hàng, kho và catalog. */
-export const OpsDashboardPage: React.FC = () => {
-  const { user } = useAuth();
-  const isAdmin = !!user?.roles.includes(ROLES.ADMIN);
+export const OpsDashboardPage: React.FC<{ workspace: 'admin' | 'staff' }> = ({ workspace }) => {
+  const isAdmin = workspace === 'admin';
   const [orders, setOrders] = useState<OrderSummary[]>([]);
   const [totalOrders, setTotalOrders] = useState<number | null>(null);
   const [lowStock, setLowStock] = useState<InventoryStock[] | null>(null);
@@ -43,13 +40,18 @@ export const OpsDashboardPage: React.FC = () => {
   return (
     <>
       <PageHeading
-        eyebrow={isAdmin ? 'Quản trị / Tổng quan' : 'Vận hành / Tổng quan'}
-        title={`Chào ${user?.fullName?.split(' ').pop() || 'bạn'}, một ngày hiệu quả nhé.`}
-        sub="Số liệu được cập nhật từ hệ thống mỗi lần mở trang."
-        actions={<>
-          <Link to="/staff/orders" className="btn sm"><Icon name="orders" /> Xử lý đơn</Link>
-          <Link to="/staff/procurement" className="btn sm primary"><Icon name="plus" /> Lập phiếu nhập</Link>
-        </>}
+        title={isAdmin ? 'Tổng quan quản trị' : 'Ca làm việc'}
+        actions={isAdmin ? (
+          <>
+            <Link to="../orders" className="btn sm"><Icon name="orders" /> Xem đơn hàng</Link>
+            <Link to="../products" className="btn sm primary"><Icon name="laptop" /> Quản lý sản phẩm</Link>
+          </>
+        ) : (
+          <>
+            <Link to="../procurement?new=1" className="btn sm"><Icon name="plus" /> Lập phiếu nhập</Link>
+            <Link to="../orders" className="btn sm primary"><Icon name="orders" /> Xử lý đơn</Link>
+          </>
+        )}
       />
       <div className="metrics">
         <Metric label="Chờ xác nhận" value={totalOrders === null ? '—' : pending} sub="Đơn mới cần xử lý" icon="clock" tone={pending ? 'warn' : ''} />
@@ -67,7 +69,7 @@ export const OpsDashboardPage: React.FC = () => {
         <section className="panel">
           <div className="row between" style={{ marginBottom: 14 }}>
             <h3>Đơn hàng gần đây</h3>
-            <Link to="/staff/orders" className="text-btn small">Xem tất cả <Icon name="arrow-right" /></Link>
+            <Link to="../orders" className="text-btn small">Xem tất cả <Icon name="arrow-right" /></Link>
           </div>
           <div className="table-wrap" style={{ border: 0 }}>
             <table className="data-table">
@@ -90,7 +92,7 @@ export const OpsDashboardPage: React.FC = () => {
         <section className="panel">
           <div className="row between" style={{ marginBottom: 6 }}>
             <h3>Sắp hết hàng</h3>
-            <Link to="/staff/inventory?low=1" className="text-btn small">Kho hàng <Icon name="arrow-right" /></Link>
+            <Link to="../inventory?low=1" className="text-btn small">Kho hàng <Icon name="arrow-right" /></Link>
           </div>
           {lowStock === null ? <p className="small muted">Không tải được dữ liệu kho.</p> : lowStock.length === 0 ? (
             <p className="small muted" style={{ marginTop: 10 }}>Tồn kho đang ổn định.</p>

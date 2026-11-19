@@ -1,12 +1,15 @@
 import { EmptyState, ToastProvider } from '@/components/ui';
 import { ROLES } from '@/constants/roles';
 import React, { useEffect } from 'react';
-import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom';
+import { BrowserRouter, Navigate, Outlet, Route, Routes, useLocation } from 'react-router-dom';
+import { AdminLayout } from '../../layouts/AdminLayout';
 import { PublicLayout } from '../../layouts/PublicLayout';
 import { StaffLayout } from '../../layouts/StaffLayout';
+import { useAuth } from '../providers/AuthProvider';
 import { CartProvider } from '../providers/CartProvider';
 import { ProtectedRoute } from './ProtectedRoute';
 import { RoleBasedRoute } from './RoleBasedRoute';
+import { ADMIN_HOME, STAFF_HOME, toAdminWorkspacePath } from './workspacePaths';
 
 // Catalog
 import AdminCategoryPage from '@/modules/catalog/pages/admin/AdminCategoryPage';
@@ -65,6 +68,24 @@ const ChatWidgetGate: React.FC = () => {
   return <AIChatWidget />;
 };
 
+const operationPages = [
+  { path: 'orders', Page: StaffOrderListPage },
+  { path: 'inventory', Page: InventoryPage },
+  { path: 'procurement', Page: PurchaseOrderListPage },
+  { path: 'suppliers', Page: SupplierListPage },
+  { path: 'reviews', Page: StaffReviewPage },
+];
+
+const StaffWorkspaceEntry: React.FC = () => {
+  const { user } = useAuth();
+  const { pathname, search, hash } = useLocation();
+
+  if (user?.roles.includes(ROLES.ADMIN)) {
+    return <Navigate to={{ pathname: toAdminWorkspacePath(pathname), search, hash }} replace />;
+  }
+  return <Outlet />;
+};
+
 export const AppRouter: React.FC = () => (
   <BrowserRouter>
     <ToastProvider>
@@ -96,28 +117,28 @@ export const AppRouter: React.FC = () => (
             <Route path="*" element={<ErrorPage kind="notFound" />} />
           </Route>
 
-          {/* Staff & Admin */}
+          {/* Cho phép Admin mở bookmark Staff cũ rồi chuyển đến trang Admin tương ứng. */}
           <Route element={<RoleBasedRoute allowedRoles={[ROLES.STAFF, ROLES.ADMIN]} />}>
-            <Route element={<StaffLayout />}>
-              <Route path="/staff" element={<Navigate to="/staff/dashboard" replace />} />
-              <Route path="/staff/dashboard" element={<OpsDashboardPage />} />
-              <Route path="/staff/orders" element={<StaffOrderListPage />} />
-              <Route path="/staff/inventory" element={<InventoryPage />} />
-              <Route path="/staff/procurement" element={<PurchaseOrderListPage />} />
-              <Route path="/staff/suppliers" element={<SupplierListPage />} />
-              <Route path="/staff/reviews" element={<StaffReviewPage />} />
-              <Route path="/staff/*" element={<Navigate to="/staff/dashboard" replace />} />
+            <Route path="/staff" element={<StaffWorkspaceEntry />}>
+              <Route element={<StaffLayout />}>
+                <Route index element={<Navigate to={STAFF_HOME} replace />} />
+                <Route path="dashboard" element={<OpsDashboardPage workspace="staff" />} />
+                {operationPages.map(({ path, Page }) => <Route key={path} path={path} element={<Page />} />)}
+                <Route path="*" element={<Navigate to={STAFF_HOME} replace />} />
+              </Route>
             </Route>
           </Route>
 
           {/* Admin only */}
           <Route element={<RoleBasedRoute allowedRoles={[ROLES.ADMIN]} />}>
-            <Route element={<StaffLayout />}>
-              <Route path="/admin" element={<OpsDashboardPage />} />
-              <Route path="/admin/products" element={<AdminProductPage />} />
-              <Route path="/admin/categories" element={<AdminCategoryPage />} />
-              <Route path="/admin/promotions/*" element={<PromotionRoutes />} />
-              <Route path="/admin/*" element={<Navigate to="/admin" replace />} />
+            <Route path="/admin" element={<AdminLayout />}>
+              <Route index element={<Navigate to={ADMIN_HOME} replace />} />
+              <Route path="dashboard" element={<OpsDashboardPage workspace="admin" />} />
+              <Route path="products" element={<AdminProductPage />} />
+              <Route path="categories" element={<AdminCategoryPage />} />
+              <Route path="promotions/*" element={<PromotionRoutes />} />
+              {operationPages.map(({ path, Page }) => <Route key={path} path={path} element={<Page />} />)}
+              <Route path="*" element={<Navigate to={ADMIN_HOME} replace />} />
             </Route>
           </Route>
         </Routes>

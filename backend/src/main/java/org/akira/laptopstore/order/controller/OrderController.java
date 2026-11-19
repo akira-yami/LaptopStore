@@ -54,6 +54,7 @@ public class OrderController {
         return ResponseEntity.ok(OrderPageResponse.from(orderService.getAllOrders(pageable)));
     }
 
+    // Lấy chi tiết 1 đơn hàng
     @GetMapping("/staff/orders/{orderId}")
     @PreAuthorize("hasAnyRole('STAFF', 'ADMIN')")
     public ResponseEntity<OrderResponse> getStaffOrder(@PathVariable Long orderId) {

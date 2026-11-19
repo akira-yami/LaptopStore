@@ -1,11 +1,14 @@
 package org.akira.laptopstore.order.service.impl;
 
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.akira.laptopstore.cart.dto.response.CartItemResponse;
 import org.akira.laptopstore.cart.dto.response.CartResponse;
 import org.akira.laptopstore.cart.dto.response.CartSnapshot;
 import org.akira.laptopstore.cart.service.CartService;
 import org.akira.laptopstore.catalog.dto.response.CheckoutVariantSnapshot;
 import org.akira.laptopstore.catalog.service.CatalogCheckoutService;
+import org.akira.laptopstore.exception.BusinessException;
 import org.akira.laptopstore.exception.ResourceNotFoundException;
 import org.akira.laptopstore.exception.UnauthenticatedException;
 import org.akira.laptopstore.exception.ValidationException;
@@ -28,31 +31,32 @@ import org.akira.laptopstore.order.repository.OrderItemRepository;
 import org.akira.laptopstore.order.repository.OrderRepository;
 import org.akira.laptopstore.order.repository.OrderStatusHistoryRepository;
 import org.akira.laptopstore.order.service.OrderService;
+import org.akira.laptopstore.order.service.impl.OrderCheckoutSupport.CheckoutPricing;
+import org.akira.laptopstore.order.service.impl.OrderCheckoutSupport.ResolvedShippingAddress;
 import org.akira.laptopstore.order.statemachine.OrderStateMachine;
 import org.akira.laptopstore.order.util.OrderCodeGenerator;
 import org.akira.laptopstore.promotion.dto.response.CouponEvaluation;
 import org.akira.laptopstore.promotion.service.CouponService;
-import org.akira.laptopstore.user.dto.AddressResponse;
-import org.akira.laptopstore.user.service.AddressService;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import lombok.RequiredArgsConstructor;
 
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.stream.Collectors;
 
+@Slf4j
 @Service
-@RequiredArgsConstructor 
+@RequiredArgsConstructor
 public class OrderServiceImpl implements OrderService {
 
     private final OrderRepository orderRepository;
@@ -62,9 +66,8 @@ public class OrderServiceImpl implements OrderService {
     private final CartService cartService;
     private final CatalogCheckoutService catalogCheckoutService;
     private final InventoryService inventoryService;
-    private final AddressService addressService;
     private final CouponService couponService;
-    private final OrderStateMachine orderStateMachine;
+    private final OrderCheckoutSupport checkoutSupport;
 
     @Override
     @Transactional(readOnly = true)
@@ -73,15 +76,18 @@ public class OrderServiceImpl implements OrderService {
         CheckoutPreviewRequest safeRequest = request != null ? request : new CheckoutPreviewRequest();
 
         CheckoutPaymentMethod paymentMethod = CheckoutPaymentMethod.fromValue(safeRequest.getPaymentMethod());
-        ResolvedShippingAddress shipping = resolvePreviewShippingAddress(userId, safeRequest);
-
-        if (cartService == null || catalogCheckoutService == null) {
-            throw new IllegalStateException("Checkout dependencies are not configured");
-        }
+        ResolvedShippingAddress shipping = checkoutSupport.resolveShippingAddress(
+                userId,
+                safeRequest.getAddressId(),
+                safeRequest.getRecipientName(),
+                safeRequest.getRecipientPhone(),
+                safeRequest.getShippingAddress(),
+                false
+        );
 
         CartResponse cart = cartService.getCart(userId);
         if (cart == null || cart.getItems() == null || cart.getItems().isEmpty()) {
-            throw new ValidationException("Cart is empty");
+            throw new ValidationException("Giỏ hàng đang trống");
         }
 
         List<CartSnapshot.Item> cartItems = cart.getItems().stream()
@@ -93,33 +99,15 @@ public class OrderServiceImpl implements OrderService {
                 .stream()
                 .collect(Collectors.toMap(CheckoutVariantSnapshot::getVariantId, variant -> variant));
 
-        validateStockBeforeOrder(cartItems, variants);
+        checkoutSupport.validateStockBeforeOrder(cartItems, variants);
 
-        BigDecimal subtotal = calculateSubtotal(cartItems, variants);
-        BigDecimal shippingFee = calculateShippingFee(subtotal);
-        BigDecimal discount = BigDecimal.ZERO;
-        String appliedCouponCode = null;
-
-        String requestedCouponCode = normalizeUpper(safeRequest.getCouponCode());
-        if (requestedCouponCode != null) {
-            if (couponService == null) {
-                throw new ValidationException("Coupon checkout is not available yet");
-            }
-            CouponEvaluation evaluation = couponService.evaluateForCheckout(requestedCouponCode, userId, subtotal);
-            if (evaluation != null) {
-                discount = normalizeDiscount(evaluation.discountAmount(), subtotal);
-                appliedCouponCode = evaluation.couponCode() != null
-                        ? evaluation.couponCode().trim().toUpperCase(Locale.ROOT)
-                        : requestedCouponCode;
-            }
-        }
-
-        BigDecimal totalAmount = calculateTotalAmount(subtotal, discount, shippingFee);
+        String requestedCouponCode = checkoutSupport.normalizeUpper(safeRequest.getCouponCode());
+        CheckoutPricing pricing = checkoutSupport.evaluatePricing(cartItems, variants, userId, requestedCouponCode);
 
         List<OrderItemResponse> previewItems = new ArrayList<>(cartItems.size());
         int totalItems = 0;
         for (CartItemResponse item : cart.getItems()) {
-            CheckoutVariantSnapshot variant = requireVariant(variants, item.getVariantId());
+            CheckoutVariantSnapshot variant = checkoutSupport.requireVariant(variants, item.getVariantId());
             BigDecimal lineTotal = variant.getUnitPrice().multiply(BigDecimal.valueOf(item.getQuantity()));
             totalItems += item.getQuantity();
             previewItems.add(new OrderItemResponse(
@@ -141,11 +129,11 @@ public class OrderServiceImpl implements OrderService {
                 .recipientPhone(shipping.recipientPhone())
                 .shippingAddress(shipping.shippingAddress())
                 .paymentMethod(paymentMethod.name())
-                .couponCode(appliedCouponCode)
-                .subtotal(subtotal)
-                .discountAmount(discount)
-                .shippingFee(shippingFee)
-                .totalAmount(totalAmount)
+                .couponCode(pricing.couponCodeSnapshot())
+                .subtotal(pricing.subtotal())
+                .discountAmount(pricing.discountAmount())
+                .shippingFee(pricing.shippingFee())
+                .totalAmount(pricing.totalAmount())
                 .totalItems(totalItems)
                 .items(List.copyOf(previewItems))
                 .build();
@@ -156,36 +144,52 @@ public class OrderServiceImpl implements OrderService {
     public OrderResponse createOrder(Long userId, CreateOrderRequest request) {
         requireUserId(userId);
         if (request == null) {
-            throw new ValidationException("Checkout request is required");
+            throw new ValidationException("Yêu cầu đặt hàng không được để trống");
         }
 
         // 1. Validate phương thức thanh toán và địa chỉ giao hàng trước khi tạo order.
-        CheckoutPaymentMethod.fromValue(request.getPaymentMethod());
-        ResolvedShippingAddress resolvedShipping = resolveRequiredShippingAddress(userId, request);
-        String requestedCouponCode = normalizeUpper(request.getCouponCode());
+        CheckoutPaymentMethod paymentMethod = CheckoutPaymentMethod.fromValue(request.getPaymentMethod());
+        OrderStatus initialStatus = resolveInitialStatus(paymentMethod);
+        ResolvedShippingAddress resolvedShipping = checkoutSupport.resolveShippingAddress(
+                userId,
+                request.getAddressId(),
+                request.getRecipientName(),
+                request.getRecipientPhone(),
+                request.getShippingAddress(),
+                true
+        );
+        String requestedCouponCode = checkoutSupport.normalizeUpper(request.getCouponCode());
 
         // 2. Kiểm tra Idempotency-Key chống tạo đơn trùng.
-        String idempotencyKey = normalize(request.getIdempotencyKey());
+        String idempotencyKey = checkoutSupport.normalize(request.getIdempotencyKey());
         if (idempotencyKey != null) {
             Order previous = orderRepository.findByIdempotencyKeyAndUserId(idempotencyKey, userId).orElse(null);
             if (previous != null) {
-                if (!sameCheckoutPayload(previous, resolvedShipping, requestedCouponCode)) {
-                    throw new ValidationException("Idempotency-Key was already used with a different checkout payload");
+                List<OrderStatusHistory> previousHistories =
+                        orderStatusHistoryRepository.findByOrderIdOrderByChangedAtDesc(previous.getId());
+                if (!sameCheckoutPayload(previous, previousHistories, resolvedShipping, requestedCouponCode, initialStatus)) {
+                    log.warn("Xung đột Idempotency-Key={} cho userId={}: dữ liệu checkout không khớp đơn cũ orderId={}",
+                            idempotencyKey, userId, previous.getId());
+                    throw new BusinessException(
+                            HttpStatus.CONFLICT,
+                            "IDEMPOTENCY_CONFLICT",
+                            "Idempotency-Key đã được sử dụng với dữ liệu đặt hàng khác"
+                    );
                 }
+                log.info("Phát hiện yêu cầu đặt hàng lặp với Idempotency-Key={} cho userId={}, trả về đơn cũ orderId={}",
+                        idempotencyKey, userId, previous.getId());
                 return orderMapper.toResponse(
                         previous,
                         orderItemRepository.findByOrderId(previous.getId()),
-                        orderStatusHistoryRepository.findByOrderIdOrderByChangedAtDesc(previous.getId())
+                        previousHistories
                 );
             }
         }
 
-        requireCheckoutDependencies();
-
         // 3. Khóa cart để dữ liệu checkout không bị thay đổi đồng thời.
         CartSnapshot cart = cartService.lockAndGetCheckoutCart(userId);
         if (cart == null || cart.getItems() == null || cart.getItems().isEmpty()) {
-            throw new ValidationException("Cart is empty");
+            throw new ValidationException("Giỏ hàng đang trống");
         }
 
         // 4. Khóa variant theo ID tăng dần, xác minh còn bán và lấy snapshot giá/tồn hiện tại.
@@ -197,47 +201,25 @@ public class OrderServiceImpl implements OrderService {
                 .collect(Collectors.toMap(CheckoutVariantSnapshot::getVariantId, variant -> variant));
 
         // 5. Validate tồn kho của từng biến thể trước khi tạo order.
-        validateStockBeforeOrder(cart.getItems(), variants);
+        checkoutSupport.validateStockBeforeOrder(cart.getItems(), variants);
 
         // 6. Tính lại subtotal/discount/shipping/total ở server, validate coupon trước khi tạo order.
-        BigDecimal subtotal = calculateSubtotal(cart.getItems(), variants);
-        BigDecimal discount = BigDecimal.ZERO;
-        BigDecimal shippingFee = calculateShippingFee(subtotal);
-        String couponCodeSnapshot = null;
-
-        if (requestedCouponCode != null) {
-            if (couponService == null) {
-                throw new ValidationException("Coupon checkout is not available yet");
-            }
-            CouponEvaluation preEvaluation = couponService.evaluateForCheckout(requestedCouponCode, userId, subtotal);
-            if (preEvaluation != null) {
-                discount = normalizeDiscount(preEvaluation.discountAmount(), subtotal);
-                couponCodeSnapshot = preEvaluation.couponCode() != null
-                        ? preEvaluation.couponCode().trim().toUpperCase(Locale.ROOT)
-                        : requestedCouponCode;
-            }
-        }
-
-        BigDecimal totalAmount = calculateTotalAmount(subtotal, discount, shippingFee);
+        CheckoutPricing pricing = checkoutSupport.evaluatePricing(
+                cart.getItems(), variants, userId, requestedCouponCode);
 
         // 7. Lưu order để có ID cho item, coupon usage, lịch sử trạng thái và lịch sử kho.
-        CheckoutPaymentMethod paymentMethod = CheckoutPaymentMethod.fromValue(request.getPaymentMethod());
-        OrderStatus initialStatus = (paymentMethod == CheckoutPaymentMethod.VNPAY)
-                ? OrderStatus.PENDING_PAYMENT
-                : OrderStatus.WAITING_CONFIRMATION;
-
         Order order = orderRepository.saveAndFlush(Order.builder()
                 .userId(userId)
                 .orderCode(OrderCodeGenerator.generate())
                 .status(initialStatus)
-                .subtotal(subtotal)
-                .discountAmount(discount)
-                .shippingFee(shippingFee)
-                .totalAmount(totalAmount)
+                .subtotal(pricing.subtotal())
+                .discountAmount(pricing.discountAmount())
+                .shippingFee(pricing.shippingFee())
+                .totalAmount(pricing.totalAmount())
                 .recipientName(resolvedShipping.recipientName())
                 .recipientPhone(resolvedShipping.recipientPhone())
                 .shippingAddress(resolvedShipping.shippingAddress())
-                .couponCodeSnapshot(couponCodeSnapshot)
+                .couponCodeSnapshot(pricing.couponCodeSnapshot())
                 .idempotencyKey(idempotencyKey)
                 .build());
 
@@ -247,14 +229,16 @@ public class OrderServiceImpl implements OrderService {
                     requestedCouponCode,
                     userId,
                     order.getId(),
-                    subtotal
+                    pricing.subtotal()
             );
             if (reservedEvaluation != null) {
-                BigDecimal reservedDiscount = normalizeDiscount(reservedEvaluation.discountAmount(), subtotal);
+                BigDecimal reservedDiscount = checkoutSupport.normalizeDiscount(
+                        reservedEvaluation.discountAmount(), pricing.subtotal());
                 String reservedCode = reservedEvaluation.couponCode() != null
                         ? reservedEvaluation.couponCode().trim().toUpperCase(Locale.ROOT)
                         : requestedCouponCode;
-                BigDecimal reservedTotal = calculateTotalAmount(subtotal, reservedDiscount, shippingFee);
+                BigDecimal reservedTotal = checkoutSupport.calculateTotalAmount(
+                        pricing.subtotal(), reservedDiscount, pricing.shippingFee());
 
                 if (order.getDiscountAmount().compareTo(reservedDiscount) != 0
                         || order.getTotalAmount().compareTo(reservedTotal) != 0
@@ -269,7 +253,7 @@ public class OrderServiceImpl implements OrderService {
 
         // 9. Lưu snapshot sản phẩm để dữ liệu đơn không đổi khi catalog được cập nhật.
         List<OrderItem> items = cart.getItems().stream().map(cartItem -> {
-            CheckoutVariantSnapshot variant = requireVariant(variants, cartItem.getVariantId());
+            CheckoutVariantSnapshot variant = checkoutSupport.requireVariant(variants, cartItem.getVariantId());
             return OrderItem.builder()
                     .order(order)
                     .productId(variant.getProductId())
@@ -306,6 +290,9 @@ public class OrderServiceImpl implements OrderService {
                 cart.getItems().stream().map(CartSnapshot.Item::getCartItemId).toList()
         );
 
+        log.info("Tạo đơn hàng thành công: orderId={}, orderCode={}, userId={}, trạng thái={}, tổng tiền={}",
+                order.getId(), order.getOrderCode(), userId, initialStatus, order.getTotalAmount());
+
         return orderMapper.toResponse(order, items, List.of(history));
     }
 
@@ -316,25 +303,21 @@ public class OrderServiceImpl implements OrderService {
         requireOrderId(orderId);
         Order order = orderRepository.findById(orderId)
                 .filter(candidate -> userId.equals(candidate.getUserId()))
-                .orElseThrow(() -> new ResourceNotFoundException("Order not found"));
-        return orderMapper.toResponse(
-                order,
-                orderItemRepository.findByOrderId(orderId),
-                orderStatusHistoryRepository.findByOrderIdOrderByChangedAtDesc(orderId)
-        );
+                .orElseThrow(() -> new ResourceNotFoundException("Đơn hàng không được tìm thấy!"));
+        return toDetailResponse(order);
     }
 
     @Override
     @Transactional(readOnly = true)
     public Page<OrderSummaryResponse> getOwnOrders(Long userId, Pageable pageable) {
         requireUserId(userId);
-        return orderRepository.findByUserId(userId, pageable).map(this::toSummaryResponse);
+        return toSummaryPage(orderRepository.findByUserId(userId, pageable));
     }
 
     @Override
     @Transactional(readOnly = true)
     public Page<OrderSummaryResponse> getAllOrders(Pageable pageable) {
-        return orderRepository.findAll(pageable).map(this::toSummaryResponse);
+        return toSummaryPage(orderRepository.findAll(pageable));
     }
 
     @Override
@@ -342,110 +325,29 @@ public class OrderServiceImpl implements OrderService {
     public OrderResponse getStaffOrder(Long orderId) {
         requireOrderId(orderId);
         Order order = orderRepository.findById(orderId)
-                .orElseThrow(() -> new ResourceNotFoundException("Order not found"));
-        return getOwnOrder(order.getUserId(), orderId);
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy đơn hàng"));
+        return toDetailResponse(order);
     }
 
-    private OrderSummaryResponse toSummaryResponse(Order order) {
-        int totalItems = orderItemRepository.findByOrderId(order.getId()).stream()
-                .mapToInt(OrderItem::getQuantity)
-                .sum();
-        return orderMapper.toSummaryResponse(order, totalItems);
-    }
-
-    private void requireUserId(Long userId) {
-        if (userId == null || userId <= 0) {
-            throw new UnauthenticatedException("Invalid authenticated user");
-        }
-    }
-
-    private void requireOrderId(Long orderId) {
-        if (orderId == null || orderId <= 0) {
-            throw new ValidationException("orderId must be greater than 0");
-        }
-    }
-
-    private ResolvedShippingAddress resolveRequiredShippingAddress(Long userId, CreateOrderRequest request) {
-        Long addressId = request.getAddressId();
-        if (addressId != null) {
-            if (addressId <= 0) {
-                throw new ValidationException("addressId must be greater than 0");
-            }
-            if (addressService == null) {
-                throw new IllegalStateException("AddressService is not configured");
-            }
-            AddressResponse ownedAddress = addressService.getAddressById(userId, addressId);
-            String recipientName = !isBlank(request.getRecipientName())
-                    ? request.getRecipientName().trim()
-                    : ownedAddress.getRecipientName().trim();
-            String recipientPhone = !isBlank(request.getRecipientPhone())
-                    ? request.getRecipientPhone().trim()
-                    : ownedAddress.getPhone().trim();
-            String shippingAddress = !isBlank(request.getShippingAddress())
-                    ? request.getShippingAddress().trim()
-                    : formatAddress(ownedAddress);
-            validateShippingStrings(recipientName, recipientPhone, shippingAddress);
-            return new ResolvedShippingAddress(addressId, recipientName, recipientPhone, shippingAddress);
-        }
-
-        if (isBlank(request.getRecipientName())
-                || isBlank(request.getRecipientPhone())
-                || isBlank(request.getShippingAddress())) {
-            throw new ValidationException("Recipient name, phone and shipping address are required");
-        }
-        String recipientName = request.getRecipientName().trim();
-        String recipientPhone = request.getRecipientPhone().trim();
-        String shippingAddress = request.getShippingAddress().trim();
-        validateShippingStrings(recipientName, recipientPhone, shippingAddress);
-        return new ResolvedShippingAddress(null, recipientName, recipientPhone, shippingAddress);
-    }
-
-    private ResolvedShippingAddress resolvePreviewShippingAddress(Long userId, CheckoutPreviewRequest request) {
-        Long addressId = request.getAddressId();
-        if (addressId != null) {
-            if (addressId <= 0) {
-                throw new ValidationException("addressId must be greater than 0");
-            }
-            if (addressService == null) {
-                throw new IllegalStateException("AddressService is not configured");
-            }
-            AddressResponse ownedAddress = addressService.getAddressById(userId, addressId);
-            String recipientName = !isBlank(request.getRecipientName())
-                    ? request.getRecipientName().trim()
-                    : ownedAddress.getRecipientName().trim();
-            String recipientPhone = !isBlank(request.getRecipientPhone())
-                    ? request.getRecipientPhone().trim()
-                    : ownedAddress.getPhone().trim();
-            String shippingAddress = !isBlank(request.getShippingAddress())
-                    ? request.getShippingAddress().trim()
-                    : formatAddress(ownedAddress);
-            return new ResolvedShippingAddress(addressId, recipientName, recipientPhone, shippingAddress);
-        }
-
-        return new ResolvedShippingAddress(
-                null,
-                normalize(request.getRecipientName()),
-                normalize(request.getRecipientPhone()),
-                normalize(request.getShippingAddress())
-        );
-    }
     @Override
     @Transactional
     public OrderResponse updateOrderStatus(Long actorId, Long orderId, UpdateOrderStatusRequest request) {
         requireUserId(actorId);
         requireOrderId(orderId);
         if (request == null || request.getStatus() == null) {
-            throw new ValidationException("Order status is required");
+            throw new ValidationException("Trạng thái đơn hàng không được để trống");
         }
 
         Order order = orderRepository.findByIdForUpdate(orderId)
-                .orElseThrow(() -> new ResourceNotFoundException("Order not found: " + orderId));
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy đơn hàng: " + orderId));
 
         OrderStatus currentStatus = order.getStatus();
         OrderStatus targetStatus = request.getStatus();
 
-        // Repeated status commands return the existing result without a second history or restore.
-        if (currentStatus == targetStatus) return getOwnOrder(order.getUserId(), orderId);
+        // Lệnh cập nhật lặp lại cùng trạng thái: trả về kết quả hiện tại, không ghi thêm lịch sử hay hoàn kho/coupon lần hai.
+        if (currentStatus == targetStatus) {
+            return toDetailResponse(order);
+        }
         if (currentStatus == OrderStatus.PENDING_PAYMENT && targetStatus == OrderStatus.CONFIRMED) {
             throw new ValidationException("Đơn online phải được xác nhận qua kết quả thanh toán");
         }
@@ -454,7 +356,7 @@ public class OrderServiceImpl implements OrderService {
                 .filter(h -> h.getToStatus() == OrderStatus.DELIVERY_FAILED)
                 .count();
 
-        orderStateMachine.validateTransition(currentStatus, targetStatus, true, deliveryAttempts);
+        OrderStateMachine.validateTransition(currentStatus, targetStatus, true, deliveryAttempts);
 
         order.setStatus(targetStatus);
         orderRepository.save(order);
@@ -471,7 +373,10 @@ public class OrderServiceImpl implements OrderService {
             handleOrderCancellationSideEffects(order, actorId);
         }
 
-        return getOwnOrder(order.getUserId(), orderId);
+        log.info("Cập nhật trạng thái đơn hàng thành công: orderId={}, từ [{}] sang [{}], actorId={}",
+                orderId, currentStatus, targetStatus, actorId);
+
+        return toDetailResponse(order);
     }
 
     @Override
@@ -482,12 +387,16 @@ public class OrderServiceImpl implements OrderService {
 
         Order order = orderRepository.findByIdForUpdate(orderId)
                 .filter(candidate -> userId.equals(candidate.getUserId()))
-                .orElseThrow(() -> new ResourceNotFoundException("Order not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy đơn hàng"));
 
         OrderStatus currentStatus = order.getStatus();
 
-        if (currentStatus == OrderStatus.CANCELLED) return getOwnOrder(userId, orderId);
-        orderStateMachine.validateTransition(currentStatus, OrderStatus.CANCELLED, false, 0);
+        if (currentStatus == OrderStatus.CANCELLED) {
+            log.info("Đơn hàng đã ở trạng thái CANCELLED trước đó: orderId={}, userId={}, bỏ qua xử lý lặp",
+                    orderId, userId);
+            return toDetailResponse(order);
+        }
+        OrderStateMachine.validateTransition(currentStatus, OrderStatus.CANCELLED, false, 0);
 
         order.setStatus(OrderStatus.CANCELLED);
         orderRepository.save(order);
@@ -502,7 +411,10 @@ public class OrderServiceImpl implements OrderService {
 
         handleOrderCancellationSideEffects(order, userId);
 
-        return getOwnOrder(userId, orderId);
+        log.info("Khách hàng đã hủy đơn hàng: orderId={}, từ [{}] sang [CANCELLED], userId={}, lý do={}",
+                orderId, currentStatus, userId, checkoutSupport.normalize(reason));
+
+        return toDetailResponse(order);
     }
 
     @Override
@@ -521,9 +433,13 @@ public class OrderServiceImpl implements OrderService {
             orderStatusHistoryRepository.save(OrderStatusHistory.builder()
                     .order(order).fromStatus(OrderStatus.PENDING_PAYMENT).toStatus(OrderStatus.CANCELLED)
                     .changedAt(Instant.now()).changedByUserId(null).build());
-            // Never swallow errors: status, history, stock and coupon must roll back together.
+            // Không nuốt lỗi: trạng thái, lịch sử, tồn kho và coupon phải rollback cùng nhau trong một transaction.
             handleOrderCancellationSideEffects(order, null);
             count++;
+        }
+
+        if (count > 0) {
+            log.info("Đã tự động hủy {} đơn hàng chờ thanh toán online quá hạn (tạo trước {})", count, cutoffTime);
         }
 
         return count;
@@ -535,159 +451,83 @@ public class OrderServiceImpl implements OrderService {
         return expirePendingOrders(Duration.ofMinutes(15));
     }
 
+    private Page<OrderSummaryResponse> toSummaryPage(Page<Order> orderPage) {
+        if (orderPage.isEmpty()) {
+            return orderPage.map(order -> orderMapper.toSummaryResponse(order, 0));
+        }
+
+        List<Long> orderIds = orderPage.getContent().stream()
+                .map(Order::getId)
+                .toList();
+        Map<Long, Integer> totalItemsByOrderId = new HashMap<>(orderIds.size());
+        for (Object[] row : orderItemRepository.sumQuantitiesByOrderIds(orderIds)) {
+            Long id = ((Number) row[0]).longValue();
+            int total = row[1] == null ? 0 : ((Number) row[1]).intValue();
+            totalItemsByOrderId.put(id, total);
+        }
+
+        return orderPage.map(order ->
+                orderMapper.toSummaryResponse(order, totalItemsByOrderId.getOrDefault(order.getId(), 0)));
+    }
+
+    private OrderResponse toDetailResponse(Order order) {
+        return orderMapper.toResponse(
+                order,
+                orderItemRepository.findByOrderId(order.getId()),
+                orderStatusHistoryRepository.findByOrderIdOrderByChangedAtDesc(order.getId())
+        );
+    }
+
     private void handleOrderCancellationSideEffects(Order order, Long actorId) {
         List<OrderItem> items = orderItemRepository.findByOrderId(order.getId());
         List<OrderStockDeduction> lines = items.stream()
                 .map(item -> new OrderStockDeduction(item.getVariantId(), item.getQuantity()))
                 .toList();
 
-        if (inventoryService != null && !lines.isEmpty()) {
+        if (!lines.isEmpty()) {
             inventoryService.restoreForOrder(order.getId(), actorId, lines);
         }
 
-        if (order.getCouponCodeSnapshot() != null && couponService != null) {
+        if (order.getCouponCodeSnapshot() != null) {
             couponService.releaseForOrder(order.getId());
         }
     }
-        
-    
 
-    private void validateShippingStrings(String recipientName, String recipientPhone, String shippingAddress) {
-        if (isBlank(recipientName) || isBlank(recipientPhone) || isBlank(shippingAddress)) {
-            throw new ValidationException("Recipient name, phone and shipping address are required");
-        }
-        if (recipientName.length() > 100) {
-            throw new ValidationException("Recipient name must not exceed 100 characters");
-        }
-        if (recipientPhone.length() > 20) {
-            throw new ValidationException("Recipient phone must not exceed 20 characters");
-        }
-    }
-
-    private String formatAddress(AddressResponse address) {
-        List<String> parts = new ArrayList<>(5);
-        if (!isBlank(address.getStreet())) {
-            parts.add(address.getStreet().trim());
-        }
-        if (!isBlank(address.getWard())) {
-            parts.add(address.getWard().trim());
-        }
-        if (!isBlank(address.getDistrict())) {
-            parts.add(address.getDistrict().trim());
-        }
-        if (!isBlank(address.getCity())) {
-            parts.add(address.getCity().trim());
-        }
-        if (!isBlank(address.getPostalCode())) {
-            parts.add(address.getPostalCode().trim());
-        }
-        return String.join(", ", parts);
-    }
-
-    private void validateStockBeforeOrder(
-            List<CartSnapshot.Item> cartItems,
-            Map<Long, CheckoutVariantSnapshot> variants
-    ) {
-        Map<Long, Integer> requestedByVariant = new LinkedHashMap<>();
-        for (CartSnapshot.Item item : cartItems) {
-            if (item == null || item.getVariantId() == null || item.getVariantId() <= 0
-                    || item.getQuantity() == null || item.getQuantity() <= 0) {
-                throw new ValidationException("Cart items must contain a positive variantId and quantity");
-            }
-            CheckoutVariantSnapshot variant = requireVariant(variants, item.getVariantId());
-            if (variant.getUnitPrice() == null || variant.getUnitPrice().compareTo(BigDecimal.ZERO) < 0) {
-                throw new ValidationException("Invalid unit price for product variant: " + item.getVariantId());
-            }
-            int updatedQty = Math.addExact(
-                    requestedByVariant.getOrDefault(item.getVariantId(), 0),
-                    item.getQuantity()
-            );
-            requestedByVariant.put(item.getVariantId(), updatedQty);
-        }
-
-        for (Map.Entry<Long, Integer> entry : requestedByVariant.entrySet()) {
-            CheckoutVariantSnapshot variant = requireVariant(variants, entry.getKey());
-            if (variant.getAvailableQuantity() != null && entry.getValue() > variant.getAvailableQuantity()) {
-                throw new ValidationException("Not enough stock for product variant: " + entry.getKey());
-            }
-        }
-    }
-
-    private BigDecimal calculateSubtotal(
-            List<CartSnapshot.Item> cartItems,
-            Map<Long, CheckoutVariantSnapshot> variants
-    ) {
-        return cartItems.stream()
-                .map(item -> requireVariant(variants, item.getVariantId())
-                        .getUnitPrice()
-                        .multiply(BigDecimal.valueOf(item.getQuantity())))
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
-    }
-
-    private BigDecimal calculateShippingFee(BigDecimal subtotal) {
-        return BigDecimal.ZERO;
-    }
-
-    private BigDecimal normalizeDiscount(BigDecimal rawDiscount, BigDecimal subtotal) {
-        if (rawDiscount == null || rawDiscount.compareTo(BigDecimal.ZERO) <= 0) {
-            return BigDecimal.ZERO;
-        }
-        if (rawDiscount.compareTo(subtotal) > 0) {
-            return subtotal;
-        }
-        return rawDiscount;
-    }
-
-    private BigDecimal calculateTotalAmount(BigDecimal subtotal, BigDecimal discount, BigDecimal shippingFee) {
-        BigDecimal total = subtotal.subtract(discount).add(shippingFee);
-        if (total.compareTo(BigDecimal.ZERO) < 0) {
-            throw new ValidationException("Order total amount cannot be negative");
-        }
-        return total;
-    }
-
-    private void requireCheckoutDependencies() {
-        if (cartService == null || catalogCheckoutService == null || inventoryService == null) {
-            throw new IllegalStateException("Checkout dependencies are not configured");
-        }
-    }
-
-    private CheckoutVariantSnapshot requireVariant(Map<Long, CheckoutVariantSnapshot> variants, Long variantId) {
-        CheckoutVariantSnapshot variant = variants.get(variantId);
-        if (variant == null) {
-            throw new ResourceNotFoundException("Product variant not found: " + variantId);
-        }
-        return variant;
+    private OrderStatus resolveInitialStatus(CheckoutPaymentMethod paymentMethod) {
+        return paymentMethod == CheckoutPaymentMethod.VNPAY
+                ? OrderStatus.PENDING_PAYMENT
+                : OrderStatus.WAITING_CONFIRMATION;
     }
 
     private boolean sameCheckoutPayload(
             Order order,
+            List<OrderStatusHistory> histories,
             ResolvedShippingAddress resolvedShipping,
-            String requestedCouponCode
+            String requestedCouponCode,
+            OrderStatus expectedInitialStatus
     ) {
+        OrderStatus originalInitialStatus = histories.stream()
+                .filter(h -> h.getFromStatus() == null)
+                .map(OrderStatusHistory::getToStatus)
+                .findFirst()
+                .orElse(order.getStatus());
+
         return Objects.equals(order.getRecipientName(), resolvedShipping.recipientName())
                 && Objects.equals(order.getRecipientPhone(), resolvedShipping.recipientPhone())
                 && Objects.equals(order.getShippingAddress(), resolvedShipping.shippingAddress())
-                && Objects.equals(normalizeUpper(order.getCouponCodeSnapshot()), requestedCouponCode);
+                && Objects.equals(checkoutSupport.normalizeUpper(order.getCouponCodeSnapshot()), requestedCouponCode)
+                && originalInitialStatus == expectedInitialStatus;
     }
 
-    private String normalize(String value) {
-        return isBlank(value) ? null : value.trim();
+    private void requireUserId(Long userId) {
+        if (userId == null || userId <= 0) {
+            throw new UnauthenticatedException("Thông tin người dùng đăng nhập không hợp lệ");
+        }
     }
 
-    private String normalizeUpper(String value) {
-        return isBlank(value) ? null : value.trim().toUpperCase(Locale.ROOT);
-    }
-
-    private boolean isBlank(String value) {
-        return value == null || value.isBlank();
-    }
-
-    private record ResolvedShippingAddress(
-            Long addressId,
-            String recipientName,
-            String recipientPhone,
-            String shippingAddress
-    ) {
+    private void requireOrderId(Long orderId) {
+        if (orderId == null || orderId <= 0) {
+            throw new ValidationException("Mã đơn hàng (orderId) phải lớn hơn 0");
+        }
     }
 }

@@ -1,5 +1,6 @@
 import { useAuth } from '@/app/providers/AuthProvider';
 import { useCart } from '@/app/providers/CartProvider';
+import { ADMIN_HOME, STAFF_HOME } from '@/app/router/workspacePaths';
 import { Brand, Icon, useToast } from '@/components/ui';
 import { ROLES } from '@/constants/roles';
 import React, { useEffect, useRef, useState } from 'react';
@@ -139,7 +140,7 @@ export const Header: React.FC = () => {
                                         <Link to="/orders" role="menuitem"><Icon name="orders" />Đơn hàng</Link>
                                         <Link to="/me/addresses" role="menuitem"><Icon name="home" />Sổ địa chỉ</Link>
                                         {isStaff && (
-                                            <Link to={isAdmin ? '/admin' : '/staff/dashboard'} role="menuitem">
+                                            <Link to={isAdmin ? ADMIN_HOME : STAFF_HOME} role="menuitem">
                                                 <Icon name="grid" />{isAdmin ? 'Không gian quản trị' : 'Không gian nhân viên'}
                                             </Link>
                                         )}

@@ -126,7 +126,7 @@ export const InventoryPage: React.FC = () => {
         sub="Theo dõi tồn thực tế theo từng SKU."
         actions={<>
           <button type="button" className="btn sm" onClick={() => void load()}><Icon name="refresh" /> Làm mới</button>
-          <Link to="/staff/procurement?new=1" className="btn sm primary"><Icon name="plus" /> Tạo phiếu nhập</Link>
+          <Link to="../procurement?new=1" className="btn sm primary"><Icon name="plus" /> Tạo phiếu nhập</Link>
         </>}
       />
 
