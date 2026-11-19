@@ -3,13 +3,17 @@ services:
   app:
     build: .
     ports:
-      - "${APP_PORT:-8080}:8080"
+      - "${APP_PORT:-8081}:8081"
 
     environment:
       SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-dev}
-      SPRING_DATASOURCE_URL: jdbc:postgresql://${DB_HOST:-postgres}:5432/${DB_NAME:-laptop_store}
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${DB_NAME:-laptop_store}
       SPRING_DATASOURCE_USERNAME: ${DB_USERNAME:-postgres}
       SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD}
+      FLYWAY_LOCATIONS: ${FLYWAY_LOCATIONS:-classpath:db/migration,classpath:db/seed}
+
+    volumes:
+      - ./uploads:/app/uploads
 
     depends_on:
       postgres:
@@ -28,7 +32,7 @@ services:
       POSTGRES_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD}
 
     ports:
-      - "${DB_HOST_PORT:-5432}:5432"
+      - "${DB_HOST_PORT:-5434}:5432"
 
     volumes:
       - postgres-data:/var/lib/postgresql/data

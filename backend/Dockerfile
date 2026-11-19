@@ -27,6 +27,6 @@ COPY --from=builder --chown=spring:spring \
 
 USER spring
 
-EXPOSE 8080
+EXPOSE 8081
 
 ENTRYPOINT ["java", "-XX:MaxRAMPercentage=75", "-jar", "/app/app.jar"]

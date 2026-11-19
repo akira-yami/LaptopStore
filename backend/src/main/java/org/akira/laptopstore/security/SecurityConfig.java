@@ -59,7 +59,7 @@ public class SecurityConfig {
                         .accessDeniedHandler(accessDeniedHandler))
                 .authorizeHttpRequests(auth -> auth
                         // Public endpoints
-                        .requestMatchers("/api/v1/auth/**", "/api/v1/ai/**").permitAll()
+                        .requestMatchers("/api/v1/auth/**", "/api/v1/ai/**", "/api/v1/ping", "/api/v1/health").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/products/**", "/api/v1/brands/**",
                                 "/api/v1/categories/**", "/api/v1/reviews/**")
                         .permitAll()
