@@ -26,7 +26,9 @@ export interface VariantSnapshot {
     price: number;
     quantity: number;
     status: string;
+    active?: boolean;
 }
+
 
 export interface ProductSummaryResponse {
     id: number;

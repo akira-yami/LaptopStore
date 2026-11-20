@@ -12,8 +12,10 @@ const adminNavigation: { label: string; links: { to: string; label: string; icon
       { to: ADMIN_HOME, label: 'Tổng quan', icon: 'grid' },
       { to: '/admin/products', label: 'Sản phẩm', icon: 'laptop' },
       { to: '/admin/categories', label: 'Danh mục', icon: 'tag' },
+      { to: '/admin/brands', label: 'Thương hiệu', icon: 'shield' },
       { to: '/admin/promotions', label: 'Khuyến mãi', icon: 'wallet' },
-      { to: '/admin/users', label: 'Người dùng', icon: 'shield' },
+      { to: '/admin/users', label: 'Người dùng', icon: 'users' },
+
     ],
   },
   {

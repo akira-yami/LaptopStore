@@ -33,5 +33,8 @@ public interface ProductService {
 
     List<ProductImageDto> getProductImages(Long productId);
 
+    List<ProductImageDto> updateProductImages(Long productId, List<ProductImageDto> images);
+
     ProductSpecificationDto getProductSpecification(Long productId);
+
 }

@@ -136,8 +136,8 @@ public class ProductVariantServiceImpl implements ProductVariantService {
             throw new ResourceNotFoundException("Lỗi: Không tìm thấy Product với ID: " + productId);
         }
 
-        // 2. Lấy danh sách Variant từ DB (đã tự động lọc active = true)
-        List<ProductVariant> variants = productVariantRepository.findByProductId(productId);
+        // 2. Lấy danh sách toàn bộ Variant từ DB (kể cả active = false cho Admin quản lý)
+        List<ProductVariant> variants = productVariantRepository.findAllByProductIdNative(productId);
 
         // 3. Map từ Entity sang DTO và trả về
         return variants.stream()

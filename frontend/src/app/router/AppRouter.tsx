@@ -12,6 +12,7 @@ import { RoleBasedRoute } from './RoleBasedRoute';
 import { ADMIN_HOME, STAFF_HOME, toAdminWorkspacePath } from './workspacePaths';
 
 // Catalog
+import AdminBrandPage from '@/modules/catalog/pages/admin/AdminBrandPage';
 import AdminCategoryPage from '@/modules/catalog/pages/admin/AdminCategoryPage';
 import AdminProductPage from '@/modules/catalog/pages/admin/AdminProductPage';
 import { HomeUser } from '@/modules/catalog/pages/user/HomeUser';
@@ -66,12 +67,16 @@ const ScrollToTop: React.FC = () => {
 };
 
 const operationPages = [
+  { path: 'products', Page: AdminProductPage },
+  { path: 'brands', Page: AdminBrandPage },
   { path: 'orders', Page: StaffOrderListPage },
   { path: 'inventory', Page: InventoryPage },
   { path: 'procurement', Page: PurchaseOrderListPage },
   { path: 'suppliers', Page: SupplierListPage },
   { path: 'reviews', Page: StaffReviewPage },
 ];
+
+
 
 const StaffWorkspaceEntry: React.FC = () => {
   const { user } = useAuth();
@@ -136,6 +141,7 @@ export const AppRouter: React.FC = () => (
               <Route path="dashboard" element={<OpsDashboardPage workspace="admin" />} />
               <Route path="products" element={<AdminProductPage />} />
               <Route path="categories" element={<AdminCategoryPage />} />
+              <Route path="brands" element={<AdminBrandPage />} />
               <Route path="promotions/*" element={<PromotionRoutes />} />
               <Route path="users" element={<AdminUserListPage />} />
               {operationPages.map(({ path, Page }) => <Route key={path} path={path} element={<Page />} />)}

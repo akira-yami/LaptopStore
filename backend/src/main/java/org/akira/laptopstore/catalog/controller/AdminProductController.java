@@ -16,6 +16,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 
 import org.akira.laptopstore.catalog.dto.request.UpdateProductRequest;
 import org.akira.laptopstore.catalog.dto.request.UpdateVariantRequest;
+import org.akira.laptopstore.catalog.dto.response.ProductImageDto;
 import org.akira.laptopstore.catalog.dto.response.ProductResponse;
 import org.akira.laptopstore.catalog.dto.response.VariantSnapshot;
 import org.akira.laptopstore.catalog.mapper.ProductMapper;
@@ -25,18 +26,9 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/v1/admin/products")
 @RequiredArgsConstructor
-@PreAuthorize("hasRole('ADMIN')") // <-- THÊM DÒNG NÀY ĐỂ BẢO VỆ TOÀN BỘ CLASS
-/*
-======================== ĐÃ XÓA CODE CŨ VÀ CẬP NHẬP CODE MỚI - Annotation @PreAuthorize =======================
-*Trong Spring Security, việc cấu hình chặn URL ở SecurityConfig (như requestMatchers("/api/v1/admin/**").hasRole("ADMIN")) là lớp khiên thứ nhất.
-*Lớp khiên thứ hai là bảo vệ trực tiếp trên hàm/class bằng @PreAuthorize (Method Security).
-Đã gắn @PreAuthorize("hasRole('ADMIN')") ở các hàm như updateProduct, createVariant... Rất tốt!
-→ NHƯNG lại quên gắn ở createProduct, getAllProducts, toggleProductStatus.
-→ Nếu sau này có ai đó lỡ tay sửa URL trong SecurityConfig, các API tạo sản phẩm này sẽ bị hổng toàn bộ.
-    + Kéo lên đầu file, thêm @PreAuthorize("hasRole('ADMIN')") ngay trước khai báo lớp `public class AdminProductController`
-    + Xóa hết các dòng @PreAuthorize("hasRole('ADMIN')") đang nằm lẻ tẻ ở các hàm bên dưới để code sạch đẹp hơn.
-*/
+@PreAuthorize("hasAnyRole('STAFF', 'ADMIN')")
 public class AdminProductController {
+
 
     private final ProductService productService;
     private final ProductMapper productMapper;
@@ -140,6 +132,15 @@ public class AdminProductController {
             @PathVariable Long variantId) {
 
         VariantSnapshot response = productVariantService.getVariantById(productId, variantId);
+        return ResponseEntity.ok(response);
+    }
+
+    @PutMapping("/{productId}/images")
+    public ResponseEntity<List<ProductImageDto>> updateProductImages(
+            @PathVariable Long productId,
+            @RequestBody List<ProductImageDto> images) {
+
+        List<ProductImageDto> response = productService.updateProductImages(productId, images);
         return ResponseEntity.ok(response);
     }
 }

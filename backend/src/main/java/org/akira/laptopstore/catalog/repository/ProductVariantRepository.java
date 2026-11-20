@@ -25,6 +25,10 @@ public interface ProductVariantRepository extends JpaRepository<ProductVariant, 
     // Nhờ có @SQLRestriction("active = true") ở Entity, hàm này sẽ tự động KHÔNG lấy các Variant đã bị Deactivate!
     List<ProductVariant> findByProductId(Long productId);
 
+    @Query(value = "SELECT * FROM product_variants WHERE product_id = :productId ORDER BY id ASC", nativeQuery = true)
+    List<ProductVariant> findAllByProductIdNative(@Param("productId") Long productId);
+
+
     boolean existsBySku(String sku);
 
     //Kiểm tra SKU trùng, nhưng bỏ qua Variant đang được cập nhật

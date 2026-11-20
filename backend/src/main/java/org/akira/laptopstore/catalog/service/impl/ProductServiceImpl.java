@@ -218,6 +218,48 @@ public class ProductServiceImpl implements ProductService {
     }
 
     @Override
+    @Transactional
+    public List<ProductImageDto> updateProductImages(Long productId, List<ProductImageDto> imageDtos) {
+        Product product = productRepository.findById(productId)
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy sản phẩm với ID: " + productId));
+
+        // 1. Xóa toàn bộ ảnh cũ của sản phẩm
+        List<org.akira.laptopstore.catalog.entity.ProductImage> oldImages = productImageRepository.findByProductId(productId);
+        if (!oldImages.isEmpty()) {
+            productImageRepository.deleteAll(oldImages);
+        }
+
+        // 2. Thêm danh sách ảnh mới nếu có
+        if (imageDtos != null && !imageDtos.isEmpty()) {
+            boolean hasPrimary = false;
+            for (ProductImageDto dto : imageDtos) {
+                boolean isPrimary = Boolean.TRUE.equals(dto.getIsPrimary()) && !hasPrimary;
+                if (isPrimary) {
+                    hasPrimary = true;
+                }
+                org.akira.laptopstore.catalog.entity.ProductImage img = org.akira.laptopstore.catalog.entity.ProductImage.builder()
+                        .product(product)
+                        .imageUrl(dto.getImageUrl().trim())
+                        .isPrimary(isPrimary)
+                        .build();
+                productImageRepository.save(img);
+            }
+
+            // Nếu không có ảnh nào được set isPrimary=true thì mặc định ảnh đầu tiên là primary
+            if (!hasPrimary) {
+                List<org.akira.laptopstore.catalog.entity.ProductImage> savedList = productImageRepository.findByProductId(productId);
+                if (!savedList.isEmpty()) {
+                    savedList.get(0).setIsPrimary(true);
+                    productImageRepository.save(savedList.get(0));
+                }
+            }
+        }
+
+        return productMapper.toProductImageDtoList(productImageRepository.findByProductId(productId));
+    }
+
+
+    @Override
     public ProductSpecificationDto getProductSpecification(Long productId) {
         if (!productRepository.existsById(productId)) {
             throw new ResourceNotFoundException("Không tìm thấy sản phẩm với ID: " + productId);

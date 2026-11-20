@@ -3,6 +3,11 @@ import { Brand, CreateBrandRequest, UpdateBrandRequest } from '../types';
 
 export const brandApi = {
     getAllBrands: async (): Promise<Brand[]> => {
+        const response = await apiClient.get<Brand[]>('/api/v1/admin/brands');
+        return response.data;
+    },
+
+    getPublicBrands: async (): Promise<Brand[]> => {
         const response = await apiClient.get<Brand[]>('/api/v1/brands');
         return response.data;
     },

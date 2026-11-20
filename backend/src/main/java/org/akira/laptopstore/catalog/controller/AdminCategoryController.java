@@ -14,17 +14,21 @@ import org.springframework.web.bind.annotation.*;
 @RestController
 @RequestMapping("/api/v1/admin/categories")
 @RequiredArgsConstructor
+@PreAuthorize("hasAnyRole('STAFF', 'ADMIN')")
 public class AdminCategoryController {
     private final CategoryService categoryService;
 
+    @GetMapping
+    public ResponseEntity<List<CategoryResponse>> getAllCategories() {
+        return ResponseEntity.ok(categoryService.findAllCategories());
+    }
+
     @PostMapping
-    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<CategoryResponse> createCategory(@Valid @RequestBody CreateCategoryRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED).body(categoryService.createCategory(request));
     }
 
     @PutMapping("/{id}")
-    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<CategoryResponse> updateCategory(
             @PathVariable Long id,
             @Valid @RequestBody UpdateCategoryRequest request) {
@@ -32,9 +36,9 @@ public class AdminCategoryController {
     }
 
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<String> deleteCategory(@PathVariable Long id) {
         categoryService.deleteCategory(id);
         return ResponseEntity.ok("Xóa danh mục thành công!");
     }
 }
+

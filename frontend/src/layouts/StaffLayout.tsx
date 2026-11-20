@@ -7,12 +7,15 @@ import { useWorkspaceControls } from './useWorkspaceControls';
 
 const staffNavigation: { to: string; label: string; icon: IconName }[] = [
   { to: STAFF_HOME, label: 'Ca làm việc', icon: 'grid' },
+  { to: '/staff/products', label: 'Sản phẩm', icon: 'laptop' },
+  { to: '/staff/brands', label: 'Thương hiệu', icon: 'shield' },
   { to: '/staff/orders', label: 'Xử lý đơn hàng', icon: 'orders' },
   { to: '/staff/inventory', label: 'Kho hàng', icon: 'box' },
   { to: '/staff/procurement', label: 'Nhận hàng', icon: 'truck' },
   { to: '/staff/suppliers', label: 'Nhà cung cấp', icon: 'users' },
   { to: '/staff/reviews', label: 'Duyệt đánh giá', icon: 'star' },
 ];
+
 
 export const StaffLayout: React.FC = () => {
   const { accountName, initials, scrolled, sidebarOpen, setSidebarOpen, signOut } = useWorkspaceControls();

@@ -11,21 +11,27 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
+
 @RestController
 @RequestMapping("/api/v1/admin/brands")
 @RequiredArgsConstructor
+@PreAuthorize("hasAnyRole('STAFF', 'ADMIN')")
 public class AdminBrandController {
 
     private final BrandService brandService;
 
+    @GetMapping
+    public ResponseEntity<List<BrandResponse>> getAllBrands() {
+        return ResponseEntity.ok(brandService.findAllBrands());
+    }
+
     @PostMapping
-    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<BrandResponse> createBrand(@Valid @RequestBody CreateBrandRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED).body(brandService.createBrand(request));
     }
 
     @PutMapping("/{id}")
-    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<BrandResponse> updateBrand(
             @PathVariable Long id, 
             @Valid @RequestBody UpdateBrandRequest request) {
@@ -33,9 +39,9 @@ public class AdminBrandController {
     }
 
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<String> deleteBrand(@PathVariable Long id) {
         brandService.deleteBrand(id);
         return ResponseEntity.ok("Xóa thương hiệu thành công!");
     }
 }
+
