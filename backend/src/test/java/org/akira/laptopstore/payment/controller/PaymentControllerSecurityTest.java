@@ -34,6 +34,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -134,6 +135,36 @@ class PaymentControllerSecurityTest {
                 .andExpect(status().isOk());
 
         verify(paymentService).recordCodPayment(any());
+    }
+
+    @Test
+    @DisplayName("GET /api/v1/payments/staff/by-orders với ROLE_USER bị chặn 403 Forbidden")
+    void getByOrderIdsForStaff_whenUserRole_shouldReturn403() throws Exception {
+        CustomUserDetails principal = principal(42L, "ROLE_USER");
+
+        mockMvc.perform(get("/api/v1/payments/staff/by-orders")
+                        .param("orderIds", "1", "2")
+                        .with(user(principal)))
+                .andExpect(status().isForbidden());
+
+        verifyNoInteractions(paymentService);
+    }
+
+    @Test
+    @DisplayName("GET /api/v1/payments/staff/by-orders với ROLE_STAFF thành công 200 OK")
+    void getByOrderIdsForStaff_whenStaffRole_shouldReturn200() throws Exception {
+        CustomUserDetails principal = principal(84L, "ROLE_STAFF");
+        PaymentResponse payment = PaymentResponse.builder()
+                .id(1L).orderId(10L).method(PaymentMethod.COD).status(PaymentStatus.PENDING)
+                .amount(new BigDecimal("18000000")).createdAt(Instant.now()).build();
+        when(paymentService.getByOrderIdsForStaff(List.of(10L, 11L))).thenReturn(List.of(payment));
+
+        mockMvc.perform(get("/api/v1/payments/staff/by-orders")
+                        .param("orderIds", "10", "11")
+                        .with(user(principal)))
+                .andExpect(status().isOk());
+
+        verify(paymentService).getByOrderIdsForStaff(List.of(10L, 11L));
     }
 
     private CustomUserDetails principal(Long id, String role) {

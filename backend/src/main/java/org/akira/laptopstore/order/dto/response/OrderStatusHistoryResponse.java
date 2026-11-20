@@ -16,4 +16,11 @@ public class OrderStatusHistoryResponse {
     private OrderStatus toStatus;
     private Instant changedAt;
     private Long changedBy;
+    private String note;
+
+    public OrderStatusHistoryResponse(
+            Long id, OrderStatus fromStatus, OrderStatus toStatus, Instant changedAt, Long changedBy
+    ) {
+        this(id, fromStatus, toStatus, changedAt, changedBy, null);
+    }
 }

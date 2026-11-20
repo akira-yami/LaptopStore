@@ -54,4 +54,27 @@ class OrderEntityConstraintTest {
         assertTrue(sql.contains("ADD CONSTRAINT uq_orders_user_idempotency_key UNIQUE (user_id, idempotency_key)"),
                 "Migration V8 phải thêm constraint ghép uq_orders_user_idempotency_key UNIQUE (user_id, idempotency_key)");
     }
+
+    @Test
+    void orderAndStatusHistoryEntitiesPersistNoteAndHaveV9Migration() throws Exception {
+        Field orderNoteField = assertDoesNotThrow(() -> Order.class.getDeclaredField("note"),
+                "Entity Order phải có field note để lưu ghi chú giao hàng");
+        Column orderNoteCol = orderNoteField.getAnnotation(Column.class);
+        assertNotNull(orderNoteCol);
+        assertEquals("note", orderNoteCol.name());
+
+        Field historyNoteField = assertDoesNotThrow(() -> OrderStatusHistory.class.getDeclaredField("note"),
+                "Entity OrderStatusHistory phải có field note để lưu ghi chú chuyển trạng thái / lý do hủy");
+        Column historyNoteCol = historyNoteField.getAnnotation(Column.class);
+        assertNotNull(historyNoteCol);
+        assertEquals("note", historyNoteCol.name());
+
+        Path migrationV9 = Path.of("src/main/resources/db/migration/V9__add_order_notes.sql");
+        assertTrue(Files.exists(migrationV9), "Phải có Flyway migration V9__add_order_notes.sql");
+        String sql = Files.readString(migrationV9, StandardCharsets.UTF_8);
+        assertTrue(sql.contains("ALTER TABLE orders") && sql.contains("ADD COLUMN IF NOT EXISTS note"),
+                "Migration V9 phải thêm cột note cho bảng orders");
+        assertTrue(sql.contains("ALTER TABLE order_status_history") && sql.contains("ADD COLUMN IF NOT EXISTS note"),
+                "Migration V9 phải thêm cột note cho bảng order_status_history");
+    }
 }

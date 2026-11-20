@@ -20,6 +20,13 @@ export const paymentApi = {
     await apiClient.get<PaymentResponse>(`/payments/order/${orderId}`)
   ).data,
 
+  getByOrderIdsForStaff: async (orderIds: number[]): Promise<PaymentResponse[]> => {
+    if (orderIds.length === 0) return [];
+    const params = new URLSearchParams();
+    orderIds.forEach((id) => params.append('orderIds', String(id)));
+    return (await apiClient.get<PaymentResponse[]>(`/payments/staff/by-orders?${params.toString()}`)).data;
+  },
+
   createVnpaySession: async (paymentId: number): Promise<PaymentSessionResponse> => (
     await apiClient.post<PaymentSessionResponse>(`/payments/${paymentId}/vnpay-session`)
   ).data,

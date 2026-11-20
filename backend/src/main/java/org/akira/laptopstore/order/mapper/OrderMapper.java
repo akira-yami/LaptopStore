@@ -22,6 +22,7 @@ public class OrderMapper {
                 order.getSubtotal(), order.getDiscountAmount(), order.getShippingFee(), order.getTotalAmount(),
                 order.getRecipientName(), order.getRecipientPhone(), order.getShippingAddress(),
                 order.getCouponCodeSnapshot(),
+                order.getNote(),
                 items.stream().map(this::toItemResponse).toList(),
                 statusHistories.stream().map(this::toStatusHistoryResponse).toList(),
                 order.getCreatedAt(), order.getUpdatedAt()
@@ -46,7 +47,7 @@ public class OrderMapper {
     public OrderStatusHistoryResponse toStatusHistoryResponse(OrderStatusHistory history) {
         return new OrderStatusHistoryResponse(
                 history.getId(), history.getFromStatus(), history.getToStatus(),
-                history.getChangedAt(), history.getChangedByUserId()
+                history.getChangedAt(), history.getChangedByUserId(), history.getNote()
         );
     }
 }

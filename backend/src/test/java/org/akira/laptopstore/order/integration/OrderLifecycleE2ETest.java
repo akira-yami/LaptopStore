@@ -188,6 +188,8 @@ class OrderLifecycleE2ETest {
         assertEquals(OrderStatus.CANCELLED, cancelled.getStatus());
         assertEquals(10, currentStock(variantId));
         assertEquals("RELEASED", couponUsageStatus(created.getId()));
+        assertEquals("CANCELLED", paymentStatus(created.getId()));
+        assertEquals("Đổi cấu hình khác", cancelled.getStatusHistories().getFirst().getNote());
 
         // Hủy lặp lần 2 không được cộng tồn kho thêm lần nữa
         orderService.cancelOrder(userId, created.getId(), "Hủy lặp");
@@ -280,5 +282,9 @@ class OrderLifecycleE2ETest {
 
     private String couponUsageStatus(Long orderId) {
         return jdbc.queryForObject("select status from coupon_usages where order_id = ?", String.class, orderId);
+    }
+
+    private String paymentStatus(Long orderId) {
+        return jdbc.queryForObject("select status from payments where order_id = ?", String.class, orderId);
     }
 }

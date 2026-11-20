@@ -66,7 +66,7 @@ export interface MockBackendState {
     orderId: number;
     method: 'COD' | 'VNPAY';
     amount: number;
-    status: 'PENDING' | 'PAID' | 'FAILED';
+    status: 'PENDING' | 'PAID' | 'FAILED' | 'CANCELLED';
     createdAt: string;
     expiresAt: string | null;
   }>;
@@ -561,6 +561,14 @@ export async function setupMockBackend(page: Page, state: MockBackendState = cre
     if (paymentByOrderMatch && method === 'GET') {
       const pay = state.payments.find((p) => p.orderId === Number(paymentByOrderMatch[1]));
       return pay ? json(route, pay) : json(route, { message: 'Not found' }, 404);
+    }
+
+    if (path === '/payments/staff/by-orders' && method === 'GET') {
+      const ids = url.searchParams.getAll('orderIds').map(Number).filter((id) => !Number.isNaN(id));
+      const matched = ids.length > 0
+        ? state.payments.filter((p) => ids.includes(p.orderId))
+        : [];
+      return json(route, matched);
     }
 
     const vnpaySessionMatch = path.match(/^\/payments\/(\d+)\/vnpay-session$/);

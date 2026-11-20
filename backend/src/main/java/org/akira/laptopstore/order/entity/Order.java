@@ -64,6 +64,10 @@ public class Order {
     @Column(name = "coupon_code_snapshot")
     private String couponCodeSnapshot;
 
+    // Ghi chú giao hàng khách nhập tại bước Checkout.
+    @Column(name = "note", length = 500)
+    private String note;
+
     // Không đặt unique = true đơn lẻ; phạm vi duy nhất theo cặp (user_id, idempotency_key) được khai báo ở @Table và Flyway V8.
     @Column(name = "idempotency_key")
     private String idempotencyKey;

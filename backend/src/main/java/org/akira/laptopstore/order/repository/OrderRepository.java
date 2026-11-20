@@ -37,6 +37,14 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
     List<Order> findByStatusAndCreatedAtBefore(@Param("status") OrderStatus status,
                                                @Param("cutoffTime") Instant cutoffTime);
 
+    @Query("select o.id from Order o where o.status = :status and o.createdAt < :cutoffTime order by o.id asc")
+    List<Long> findIdsByStatusAndCreatedAtBefore(@Param("status") OrderStatus status,
+                                                 @Param("cutoffTime") Instant cutoffTime,
+                                                 Pageable pageable);
+
+    @Query(value = "SELECT * FROM orders WHERE id = :id FOR UPDATE SKIP LOCKED", nativeQuery = true)
+    Optional<Order> findByIdForUpdateSkipLocked(@Param("id") Long id);
+
     @Query("select o.status, count(o), coalesce(sum(o.totalAmount), 0) from Order o group by o.status")
     List<Object[]> summarizeByStatus();
 }

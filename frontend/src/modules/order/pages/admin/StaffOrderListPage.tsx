@@ -1,8 +1,23 @@
-import { apiErrorMessage, formatDateTime, formatMoney, Icon, Modal, ORDER_STATUS, OrderStatusBadge, PageHeading, Pager, Spinner, useToast } from '@/components/ui';
+import { apiErrorMessage, Badge, formatDateTime, formatMoney, Icon, Modal, ORDER_STATUS, OrderStatusBadge, PageHeading, Pager, Spinner, useToast } from '@/components/ui';
 import { paymentApi } from '@/modules/payment/api/paymentApi';
+import { PaymentResponse } from '@/modules/payment/types';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { orderApi } from '../../api/orderApi';
 import { OrderDetail, OrderStatus, OrderSummary } from '../../types';
+
+const formatPaymentBadge = (payment?: PaymentResponse): { label: string; tone: 'green' | 'orange' | 'red' | 'neutral' } | null => {
+  if (!payment) return null;
+  const methodLabel = payment.method === 'VNPAY' ? 'VNPay' : 'COD';
+  if (payment.status === 'PAID') return { label: `${methodLabel} · Đã thanh toán`, tone: 'green' };
+  if (payment.status === 'PENDING') {
+    return {
+      label: payment.method === 'COD' ? 'COD · Chờ thu' : 'VNPay · Chờ TT',
+      tone: 'orange',
+    };
+  }
+  if (payment.status === 'CANCELLED') return { label: `${methodLabel} · Đã hủy`, tone: 'red' };
+  return { label: `${methodLabel} · Thất bại`, tone: 'red' };
+};
 
 // Khớp OrderStateMachine.VALID_TRANSITIONS và chặn chuyển tay PENDING_PAYMENT -> CONFIRMED ở backend.
 const NEXT: Record<string, OrderStatus[]> = {
@@ -31,6 +46,7 @@ const PAGE_SIZE = 20;
 export const StaffOrderListPage = () => {
   const toast = useToast();
   const [orders, setOrders] = useState<OrderSummary[]>([]);
+  const [paymentsByOrderId, setPaymentsByOrderId] = useState<Record<number, PaymentResponse>>({});
   const [page, setPage] = useState(0);
   const [totalPages, setTotalPages] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -51,6 +67,13 @@ export const StaffOrderListPage = () => {
       const res = await orderApi.getAllForStaff({ page: p, size: PAGE_SIZE });
       setOrders(res.content);
       setTotalPages(res.totalPages);
+      const ids = res.content.map((o) => o.id);
+      if (ids.length > 0) {
+        const list = await paymentApi.getByOrderIdsForStaff(ids).catch(() => [] as PaymentResponse[]);
+        setPaymentsByOrderId(Object.fromEntries(list.map((pay) => [pay.orderId, pay])));
+      } else {
+        setPaymentsByOrderId({});
+      }
     } catch {
       setError('Không thể tải danh sách đơn hàng.');
     } finally {
@@ -129,23 +152,30 @@ export const StaffOrderListPage = () => {
       {loading ? <Spinner /> : (
         <div className="table-wrap">
           <table className="data-table">
-            <thead><tr><th>Mã đơn / Thời gian</th><th>Khách hàng</th><th>Số lượng</th><th>Giá trị</th><th>Trạng thái</th><th style={{ textAlign: 'right' }}>Thao tác</th></tr></thead>
+            <thead><tr><th>Mã đơn / Thời gian</th><th>Khách hàng</th><th>Số lượng</th><th>Giá trị</th><th>Thanh toán</th><th>Trạng thái</th><th style={{ textAlign: 'right' }}>Thao tác</th></tr></thead>
             <tbody>
               {error ? (
-                <tr><td colSpan={6} className="table-empty">{error}</td></tr>
+                <tr><td colSpan={7} className="table-empty">{error}</td></tr>
               ) : visible.length === 0 ? (
-                <tr><td colSpan={6} className="table-empty">Không có đơn hàng phù hợp. Thử đổi bộ lọc.</td></tr>
-              ) : visible.map((o) => (
+                <tr><td colSpan={7} className="table-empty">Không có đơn hàng phù hợp. Thử đổi bộ lọc.</td></tr>
+              ) : visible.map((o) => {
+                const payment = paymentsByOrderId[o.id];
+                const paymentBadge = formatPaymentBadge(payment);
+                const canRecordCod = o.status === 'DELIVERED'
+                  && payment?.method === 'COD'
+                  && payment.status === 'PENDING';
+                return (
                 <tr key={o.id}>
                   <td><div className="primary-cell">#{o.orderCode}</div><div className="subcell">{formatDateTime(o.createdAt)}</div></td>
                   <td>{o.recipientName}</td>
                   <td>{o.totalItems}</td>
                   <td className="primary-cell">{formatMoney(o.totalAmount)}</td>
+                  <td>{paymentBadge ? <Badge tone={paymentBadge.tone}>{paymentBadge.label}</Badge> : <span className="muted small">—</span>}</td>
                   <td><OrderStatusBadge status={o.status} /></td>
                   <td>
                     <div className="row" style={{ justifyContent: 'flex-end', gap: 8 }}>
                       <button type="button" className="btn sm" onClick={() => void openDetail(o.id)}>Xem</button>
-                      {o.status === 'DELIVERED' && (
+                      {canRecordCod && (
                         <button
                           type="button"
                           className="btn sm primary"
@@ -167,7 +197,8 @@ export const StaffOrderListPage = () => {
                     </div>
                   </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -216,6 +247,11 @@ export const StaffOrderListPage = () => {
               <div>
                 <strong>{detail.recipientName}</strong> · {detail.recipientPhone}
                 <p className="small muted">{detail.shippingAddress}</p>
+                {detail.note && (
+                  <p className="small" style={{ marginTop: 4 }}>
+                    <span className="muted">Ghi chú giao hàng: </span>{detail.note}
+                  </p>
+                )}
               </div>
               <OrderStatusBadge status={detail.status} />
             </div>
@@ -236,7 +272,11 @@ export const StaffOrderListPage = () => {
             <div>
               <h3 style={{ marginBottom: 8 }}>Lịch sử trạng thái</h3>
               {detail.statusHistories.map((h) => (
-                <p key={h.id} className="small"><strong>{ORDER_STATUS[h.toStatus]?.label ?? h.toStatus}</strong> <span className="muted">· {formatDateTime(h.changedAt)}</span></p>
+                <p key={h.id} className="small">
+                  <strong>{ORDER_STATUS[h.toStatus]?.label ?? h.toStatus}</strong>
+                  <span className="muted"> · {formatDateTime(h.changedAt)}</span>
+                  {h.note && <span> — {h.note}</span>}
+                </p>
               ))}
             </div>
           </div>

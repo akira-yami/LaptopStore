@@ -27,6 +27,8 @@ import org.akira.laptopstore.order.entity.OrderItem;
 import org.akira.laptopstore.order.entity.OrderStatusHistory;
 import org.akira.laptopstore.order.entity.enums.CheckoutPaymentMethod;
 import org.akira.laptopstore.order.entity.enums.OrderStatus;
+import org.akira.laptopstore.order.event.OrderCancelledEvent;
+import org.akira.laptopstore.order.event.OrderCreatedEvent;
 import org.akira.laptopstore.order.mapper.OrderMapper;
 import org.akira.laptopstore.order.repository.OrderItemRepository;
 import org.akira.laptopstore.order.repository.OrderRepository;
@@ -38,8 +40,10 @@ import org.akira.laptopstore.order.statemachine.OrderStateMachine;
 import org.akira.laptopstore.order.util.OrderCodeGenerator;
 import org.akira.laptopstore.promotion.dto.response.CouponEvaluation;
 import org.akira.laptopstore.promotion.service.CouponService;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -61,6 +65,8 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class OrderServiceImpl implements OrderService {
 
+    private static final int EXPIRATION_BATCH_SIZE = 50;
+
     private final OrderRepository orderRepository;
     private final OrderItemRepository orderItemRepository;
     private final OrderStatusHistoryRepository orderStatusHistoryRepository;
@@ -70,6 +76,8 @@ public class OrderServiceImpl implements OrderService {
     private final InventoryService inventoryService;
     private final CouponService couponService;
     private final OrderCheckoutSupport checkoutSupport;
+    private final OrderExpirationTxHelper orderExpirationTxHelper;
+    private final ApplicationEventPublisher eventPublisher;
 
     @Override
     @Transactional(readOnly = true)
@@ -237,6 +245,7 @@ public class OrderServiceImpl implements OrderService {
                 .recipientPhone(resolvedShipping.recipientPhone())
                 .shippingAddress(resolvedShipping.shippingAddress())
                 .couponCodeSnapshot(pricing.couponCodeSnapshot())
+                .note(checkoutSupport.normalize(request.getNote()))
                 .idempotencyKey(idempotencyKey)
                 .build();
         Order order;
@@ -321,6 +330,16 @@ public class OrderServiceImpl implements OrderService {
                 userId,
                 cart.getItems().stream().map(CartSnapshot.Item::getCartItemId).toList()
         );
+
+        // 13. Phát sự kiện tạo đơn trong cùng transaction để module payment tự khởi tạo bản ghi Payment PENDING,
+        // tránh trường hợp đơn COD/VNPay bị mồ côi bản ghi payment nếu client rớt mạng sau khi tạo đơn.
+        eventPublisher.publishEvent(new OrderCreatedEvent(
+                order.getId(),
+                userId,
+                paymentMethod,
+                order.getTotalAmount(),
+                order.getCreatedAt()
+        ));
 
         log.info("Tạo đơn hàng thành công: orderId={}, orderCode={}, userId={}, trạng thái={}, tổng tiền={}",
                 order.getId(), order.getOrderCode(), userId, initialStatus, order.getTotalAmount());
@@ -436,10 +455,17 @@ public class OrderServiceImpl implements OrderService {
                 .toStatus(targetStatus)
                 .changedAt(Instant.now())
                 .changedByUserId(actorId)
+                .note(checkoutSupport.normalize(request.getNote()))
                 .build());
 
-        if (targetStatus == OrderStatus.CANCELLED || targetStatus == OrderStatus.RETURNED) {
+        // Tách rõ 2 nghiệp vụ:
+        // - CANCELLED: hoàn kho CANCEL_RESTORE + nhả lượt coupon + phát sự kiện hủy Payment PENDING.
+        // - RETURNED (trả hàng sau giao): chỉ hoàn kho loại RETURN; KHÔNG nhả coupon đã tiêu dùng và KHÔNG hủy Payment đã PAID.
+        if (targetStatus == OrderStatus.CANCELLED) {
             handleOrderCancellationSideEffects(order, actorId);
+            eventPublisher.publishEvent(new OrderCancelledEvent(order.getId(), false));
+        } else if (targetStatus == OrderStatus.RETURNED) {
+            handleOrderReturnSideEffects(order, actorId);
         }
 
         log.info("Cập nhật trạng thái đơn hàng thành công: orderId={}, từ [{}] sang [{}], actorId={}",
@@ -470,41 +496,48 @@ public class OrderServiceImpl implements OrderService {
         order.setStatus(OrderStatus.CANCELLED);
         orderRepository.save(order);
 
+        String normalizedReason = checkoutSupport.normalize(reason);
         orderStatusHistoryRepository.save(OrderStatusHistory.builder()
                 .order(order)
                 .fromStatus(currentStatus)
                 .toStatus(OrderStatus.CANCELLED)
                 .changedAt(Instant.now())
                 .changedByUserId(userId)
+                .note(normalizedReason)
                 .build());
 
         handleOrderCancellationSideEffects(order, userId);
+        eventPublisher.publishEvent(new OrderCancelledEvent(order.getId(), false));
 
         log.info("Khách hàng đã hủy đơn hàng: orderId={}, từ [{}] sang [CANCELLED], userId={}, lý do={}",
-                orderId, currentStatus, userId, checkoutSupport.normalize(reason));
+                orderId, currentStatus, userId, normalizedReason);
 
         return toDetailResponse(order);
     }
 
     @Override
-    @Transactional
     public int expirePendingOrders(Duration timeout) {
         if (timeout == null || timeout.isNegative() || timeout.isZero()) {
             timeout = Duration.ofMinutes(15);
         }
         Instant cutoffTime = Instant.now().minus(timeout);
-        List<Order> expiredOrders = orderRepository.findByStatusAndCreatedAtBefore(OrderStatus.PENDING_PAYMENT, cutoffTime);
+        // Quét theo lô nhỏ (tối đa 50 đơn/lượt) và xử lý từng đơn trong transaction REQUIRES_NEW độc lập,
+        // tránh lỗi ở 1 đơn làm rollback toàn bộ các đơn quá hạn khác trong cùng đợt quét.
+        List<Long> candidateIds = orderRepository.findIdsByStatusAndCreatedAtBefore(
+                OrderStatus.PENDING_PAYMENT,
+                cutoffTime,
+                PageRequest.of(0, EXPIRATION_BATCH_SIZE)
+        );
         int count = 0;
 
-        for (Order order : expiredOrders) {
-            order.setStatus(OrderStatus.CANCELLED);
-            orderRepository.save(order);
-            orderStatusHistoryRepository.save(OrderStatusHistory.builder()
-                    .order(order).fromStatus(OrderStatus.PENDING_PAYMENT).toStatus(OrderStatus.CANCELLED)
-                    .changedAt(Instant.now()).changedByUserId(null).build());
-            // Không nuốt lỗi: trạng thái, lịch sử, tồn kho và coupon phải rollback cùng nhau trong một transaction.
-            handleOrderCancellationSideEffects(order, null);
-            count++;
+        for (Long orderId : candidateIds) {
+            try {
+                if (orderExpirationTxHelper.expireSinglePendingOrder(orderId, cutoffTime)) {
+                    count++;
+                }
+            } catch (RuntimeException ex) {
+                log.error("Không thể tự động hủy đơn quá hạn orderId={}: {}", orderId, ex.getMessage(), ex);
+            }
         }
 
         if (count > 0) {
@@ -515,7 +548,6 @@ public class OrderServiceImpl implements OrderService {
     }
 
     @Override
-    @Transactional
     public int expirePendingOrders() {
         return expirePendingOrders(Duration.ofMinutes(15));
     }
@@ -559,6 +591,17 @@ public class OrderServiceImpl implements OrderService {
 
         if (order.getCouponCodeSnapshot() != null) {
             couponService.releaseForOrder(order.getId());
+        }
+    }
+
+    private void handleOrderReturnSideEffects(Order order, Long actorId) {
+        List<OrderItem> items = orderItemRepository.findByOrderId(order.getId());
+        List<OrderStockDeduction> lines = items.stream()
+                .map(item -> new OrderStockDeduction(item.getVariantId(), item.getQuantity()))
+                .toList();
+
+        if (!lines.isEmpty()) {
+            inventoryService.restoreForReturnedOrder(order.getId(), actorId, lines);
         }
     }
 

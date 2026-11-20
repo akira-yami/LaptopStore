@@ -7,9 +7,12 @@ import org.akira.laptopstore.catalog.service.CatalogVariantQueryService;
 
 
 import org.akira.laptopstore.exception.ValidationException;
-
-
+import org.akira.laptopstore.inventory.dto.request.OrderStockDeduction;
 import org.akira.laptopstore.inventory.entity.StockMovement;
+import org.mockito.ArgumentCaptor;
+
+import java.util.List;
+import java.util.Optional;
 import org.akira.laptopstore.inventory.repository.StockMovementRepository;
 import org.akira.laptopstore.inventory.service.impl.InventoryServiceImpl;
 
@@ -74,5 +77,29 @@ public class InventoryServiceImplTest {
             inventoryService.adjustStock(1L, 5, "   ", 99L);
         });
         assertEquals("Bắt buộc phải nhập lý do khi điều chỉnh kho thủ công", exception.getMessage());
+    }
+
+    @Test
+    void restoreForReturnedOrder_ShouldRecordReturnMovementIdempotently() {
+        Long orderId = 88L;
+        Long actorId = 99L;
+        List<OrderStockDeduction> lines = List.of(new OrderStockDeduction(7L, 2));
+        String opKey = "return-88-variant-7";
+
+        when(stockMovementRepository.findByOperationKey(opKey))
+                .thenReturn(Optional.empty())
+                .thenReturn(Optional.of(StockMovement.builder().operationKey(opKey).build()));
+        when(catalogCheckoutService.adjustStock(7L, 2)).thenReturn(new StockChangeResult(7L, 5, 7));
+
+        inventoryService.restoreForReturnedOrder(orderId, actorId, lines);
+        // Gọi lặp lần 2 không được cộng kho thêm
+        inventoryService.restoreForReturnedOrder(orderId, actorId, lines);
+
+        verify(catalogCheckoutService, times(1)).adjustStock(7L, 2);
+        ArgumentCaptor<StockMovement> captor = ArgumentCaptor.forClass(StockMovement.class);
+        verify(stockMovementRepository, times(1)).save(captor.capture());
+        assertEquals("RETURN", captor.getValue().getType());
+        assertEquals(opKey, captor.getValue().getOperationKey());
+        assertEquals(2, captor.getValue().getDelta());
     }
 }

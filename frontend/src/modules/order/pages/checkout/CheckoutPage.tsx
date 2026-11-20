@@ -152,8 +152,18 @@ export const CheckoutPage: React.FC = () => {
         }
       }
 
-      await paymentApi.startPayment({ orderId: createdOrder.id, method: 'COD' }).catch(() => undefined);
-      toast(`Đặt hàng thành công! Mã đơn ${createdOrder.orderCode}.`);
+      try {
+        await paymentApi.startPayment({ orderId: createdOrder.id, method: 'COD' });
+        toast(`Đặt hàng thành công! Mã đơn ${createdOrder.orderCode}.`);
+      } catch (payErr) {
+        toast(
+          apiErrorMessage(
+            payErr,
+            `Đã tạo đơn ${createdOrder.orderCode}, nhưng chưa đồng bộ trạng thái thanh toán COD.`
+          ),
+          { tone: 'error' }
+        );
+      }
       navigate(`/orders/${createdOrder.id}`);
     } catch (err) {
       setError(apiErrorMessage(err, 'Không thể tạo đơn hàng. Vui lòng kiểm tra lại tồn kho, địa chỉ hoặc mã giảm giá.'));

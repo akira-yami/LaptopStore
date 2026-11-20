@@ -29,6 +29,9 @@ public interface InventoryService {
     // BỔ SUNG HÀM HOÀN KHO CHO ĐƠN HÀNG BỊ HỦY
     void restoreForOrder(Long orderId, Long actorId, List<OrderStockDeduction> lines);
 
+    // Hoàn kho riêng cho đơn hàng trả lại sau khi đã giao (ghi nhận loại RETURN, tách biệt với CANCEL_RESTORE)
+    void restoreForReturnedOrder(Long orderId, Long actorId, List<OrderStockDeduction> lines);
+
     void adjustStock(Long variantId, Integer delta, String reason, Long actorId);
 
     // Hợp đồng cho module procurement gọi sang khi xác nhận nhận hàng

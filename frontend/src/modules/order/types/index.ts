@@ -41,6 +41,7 @@ export interface OrderStatusHistory {
   toStatus: OrderStatus;
   changedAt: string;
   changedBy: number | null;
+  note?: string | null;
 }
 
 export interface OrderDetail extends OrderSummary {
@@ -51,6 +52,7 @@ export interface OrderDetail extends OrderSummary {
   recipientPhone: string;
   shippingAddress: string;
   couponCodeSnapshot: string | null;
+  note?: string | null;
   items: OrderItem[];
   statusHistories: OrderStatusHistory[];
   updatedAt: string;

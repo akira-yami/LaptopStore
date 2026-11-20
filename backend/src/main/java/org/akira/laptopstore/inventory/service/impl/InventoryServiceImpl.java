@@ -154,6 +154,26 @@ public class InventoryServiceImpl implements InventoryService {
 
     @Override
     @Transactional(propagation = Propagation.MANDATORY)
+    public void restoreForReturnedOrder(Long orderId, Long actorId, List<OrderStockDeduction> lines) {
+        validateDeductionRequest(orderId, lines);
+        for (OrderStockDeduction line : sortedByVariant(lines)) {
+            validateLine(line);
+            // Khóa chống lặp riêng cho luồng trả hàng sau giao (tách biệt hoàn toàn với CANCEL_RESTORE)
+            String operationKey = "return-" + orderId + "-variant-" + line.getVariantId();
+            if (alreadyProcessed(operationKey)) {
+                continue;
+            }
+            StockChangeResult stockChange = catalogCheckoutService.adjustStock(
+                    line.getVariantId(), line.getQuantity());
+            StockMovement movement = createOrderMovement(
+                    orderId, actorId, line.getVariantId(), operationKey, stockChange, "RETURN", line.getQuantity());
+            movement.setNote("Nhập hoàn kho từ đơn trả hàng #" + orderId);
+            stockMovementRepository.save(movement);
+        }
+    }
+
+    @Override
+    @Transactional(propagation = Propagation.MANDATORY)
     public void receivePurchase(Long purchaseOrderId, Long actorId, String idempotencyKey, List<PurchaseStockReceipt> lines) {
         if (purchaseOrderId == null || purchaseOrderId <= 0 || lines == null || lines.isEmpty()) {
             throw new ValidationException("Bắt buộc phải có thông tin phiếu nhập và danh sách sản phẩm");

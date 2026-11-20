@@ -11,6 +11,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.time.Instant;
+import java.util.Collection;
 import java.util.List;
 
 import org.akira.laptopstore.payment.enums.PaymentStatus;
@@ -18,6 +19,8 @@ import org.akira.laptopstore.payment.enums.PaymentStatus;
 public interface PaymentRepository extends JpaRepository<Payment, Long> {
 
         Optional<Payment> findByOrderId(Long orderId);
+
+        List<Payment> findByOrderIdIn(Collection<Long> orderIds);
 
         boolean existsByOrderId(Long orderId);
 

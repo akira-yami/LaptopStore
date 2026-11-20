@@ -25,8 +25,22 @@ public class OrderResponse {
     private String recipientPhone;
     private String shippingAddress;
     private String couponCodeSnapshot;
+    private String note;
     private List<OrderItemResponse> items;
     private List<OrderStatusHistoryResponse> statusHistories;
     private Instant createdAt;
     private Instant updatedAt;
+
+    public OrderResponse(
+            Long id, Long userId, String orderCode, OrderStatus status,
+            BigDecimal subtotal, BigDecimal discountAmount, BigDecimal shippingFee, BigDecimal totalAmount,
+            String recipientName, String recipientPhone, String shippingAddress,
+            String couponCodeSnapshot,
+            List<OrderItemResponse> items, List<OrderStatusHistoryResponse> statusHistories,
+            Instant createdAt, Instant updatedAt
+    ) {
+        this(id, userId, orderCode, status, subtotal, discountAmount, shippingFee, totalAmount,
+                recipientName, recipientPhone, shippingAddress, couponCodeSnapshot, null,
+                items, statusHistories, createdAt, updatedAt);
+    }
 }

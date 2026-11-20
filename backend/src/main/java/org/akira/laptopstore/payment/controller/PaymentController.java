@@ -15,7 +15,10 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+
+import java.util.List;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
@@ -83,6 +86,18 @@ public class PaymentController {
                                 paymentService.getByOrderId(
                                                 userDetails.getId(),
                                                 orderId));
+        }
+
+        /**
+         * Tra cứu hàng loạt trạng thái thanh toán theo danh sách orderId cho STAFF/ADMIN.
+         */
+        @GetMapping("/staff/by-orders")
+        @PreAuthorize("hasAnyRole('STAFF', 'ADMIN')")
+        public ResponseEntity<List<PaymentResponse>> getByOrderIdsForStaff(
+                        @RequestParam(name = "orderIds", required = false) List<Long> orderIds) {
+
+                return ResponseEntity.ok(
+                                paymentService.getByOrderIdsForStaff(orderIds));
         }
 
         /**

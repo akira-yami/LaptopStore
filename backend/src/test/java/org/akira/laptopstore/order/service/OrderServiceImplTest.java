@@ -18,11 +18,14 @@ import org.akira.laptopstore.order.entity.Order;
 import org.akira.laptopstore.order.entity.OrderItem;
 import org.akira.laptopstore.order.entity.OrderStatusHistory;
 import org.akira.laptopstore.order.entity.enums.OrderStatus;
+import org.akira.laptopstore.order.event.OrderCancelledEvent;
+import org.akira.laptopstore.order.event.OrderCreatedEvent;
 import org.akira.laptopstore.order.mapper.OrderMapper;
 import org.akira.laptopstore.order.repository.OrderItemRepository;
 import org.akira.laptopstore.order.repository.OrderRepository;
 import org.akira.laptopstore.order.repository.OrderStatusHistoryRepository;
 import org.akira.laptopstore.order.service.impl.OrderCheckoutSupport;
+import org.akira.laptopstore.order.service.impl.OrderExpirationTxHelper;
 import org.akira.laptopstore.order.service.impl.OrderServiceImpl;
 import org.akira.laptopstore.promotion.dto.response.CouponEvaluation;
 import org.akira.laptopstore.promotion.service.CouponService;
@@ -31,8 +34,10 @@ import org.akira.laptopstore.user.service.AddressService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
@@ -62,12 +67,22 @@ class OrderServiceImplTest {
     @Mock private InventoryService inventoryService;
     @Mock private AddressService addressService;
     @Mock private CouponService couponService;
+    @Mock private ApplicationEventPublisher eventPublisher;
 
+    private OrderExpirationTxHelper expirationTxHelper;
     private OrderServiceImpl service;
 
     @BeforeEach
     void setUp() {
         OrderCheckoutSupport checkoutSupport = new OrderCheckoutSupport(addressService, couponService);
+        expirationTxHelper = new OrderExpirationTxHelper(
+                orders,
+                orderItems,
+                histories,
+                inventoryService,
+                couponService,
+                eventPublisher
+        );
         service = new OrderServiceImpl(
                 orders,
                 orderItems,
@@ -77,7 +92,9 @@ class OrderServiceImplTest {
                 catalogCheckoutService,
                 inventoryService,
                 couponService,
-                checkoutSupport
+                checkoutSupport,
+                expirationTxHelper,
+                eventPublisher
         );
     }
 
@@ -165,12 +182,14 @@ class OrderServiceImplTest {
                 .addressId(15L)
                 .paymentMethod("VNPAY")
                 .couponCode("student10")
+                .note("  Giao giờ hành chính  ")
                 .idempotencyKey("idem-week4-001")
                 .build();
 
         var response = service.createOrder(42L, request);
 
         assertEquals(100L, response.getId());
+        assertEquals("Giao giờ hành chính", response.getNote());
         assertEquals("Phan Anh Khang", response.getRecipientName());
         assertEquals("0901234567", response.getRecipientPhone());
         assertEquals("123 Nguyen Trai, Phuong 2, Quan 5, TP. Ho Chi Minh, 700000", response.getShippingAddress());
@@ -183,6 +202,7 @@ class OrderServiceImplTest {
         verify(couponService).evaluateForCheckout("STUDENT10", 42L, new BigDecimal("30000000.00"));
         verify(couponService).reserveForOrder("STUDENT10", 42L, 100L, new BigDecimal("30000000.00"));
         verify(inventoryService).deductForOrder(eq(100L), eq(42L), any());
+        verify(eventPublisher).publishEvent(any(OrderCreatedEvent.class));
         verify(cartService).clearPurchasedItems(42L, List.of(9L));
     }
 
@@ -282,7 +302,9 @@ class OrderServiceImplTest {
 
         assertEquals(OrderStatus.PACKING, order.getStatus());
         verify(orders).save(order);
-        verify(histories).save(any(OrderStatusHistory.class));
+        ArgumentCaptor<OrderStatusHistory> historyCaptor = ArgumentCaptor.forClass(OrderStatusHistory.class);
+        verify(histories).save(historyCaptor.capture());
+        assertEquals("Packed by staff", historyCaptor.getValue().getNote());
     }
 
     @Test
@@ -298,8 +320,12 @@ class OrderServiceImplTest {
         var response = service.cancelOrder(42L, 10L, "Changed my mind");
 
         assertEquals(OrderStatus.CANCELLED, order.getStatus());
+        ArgumentCaptor<OrderStatusHistory> historyCaptor = ArgumentCaptor.forClass(OrderStatusHistory.class);
+        verify(histories).save(historyCaptor.capture());
+        assertEquals("Changed my mind", historyCaptor.getValue().getNote());
         verify(inventoryService).restoreForOrder(eq(10L), eq(42L), any());
         verify(couponService).releaseForOrder(10L);
+        verify(eventPublisher).publishEvent(new OrderCancelledEvent(10L, false));
     }
 
     @Test
@@ -309,8 +335,9 @@ class OrderServiceImplTest {
         expiredOrder.setCouponCodeSnapshot("EXPIRED10");
         expiredOrder.setCreatedAt(Instant.now().minus(30, ChronoUnit.MINUTES));
 
-        when(orders.findByStatusAndCreatedAtBefore(eq(OrderStatus.PENDING_PAYMENT), any(Instant.class)))
-                .thenReturn(List.of(expiredOrder));
+        when(orders.findIdsByStatusAndCreatedAtBefore(eq(OrderStatus.PENDING_PAYMENT), any(Instant.class), any()))
+                .thenReturn(List.of(101L));
+        when(orders.findByIdForUpdateSkipLocked(101L)).thenReturn(Optional.of(expiredOrder));
         when(orderItems.findByOrderId(101L)).thenReturn(List.of(OrderItem.builder()
                 .id(1L).productId(10L).variantId(20L).quantity(1).unitPrice(BigDecimal.TEN).build()));
 
@@ -319,14 +346,17 @@ class OrderServiceImplTest {
         assertEquals(1, cancelledCount);
         assertEquals(OrderStatus.CANCELLED, expiredOrder.getStatus());
         verify(orders).save(expiredOrder);
-        verify(histories).save(any(OrderStatusHistory.class));
+        ArgumentCaptor<OrderStatusHistory> historyCaptor = ArgumentCaptor.forClass(OrderStatusHistory.class);
+        verify(histories).save(historyCaptor.capture());
+        assertEquals("Tự động hủy do quá thời hạn thanh toán online", historyCaptor.getValue().getNote());
         verify(inventoryService).restoreForOrder(eq(101L), isNull(), any());
         verify(couponService).releaseForOrder(101L);
+        verify(eventPublisher).publishEvent(new OrderCancelledEvent(101L, true));
     }
 
     @Test
     void expirePendingOrdersDoesNothingWhenNoExpiredOrders() {
-        when(orders.findByStatusAndCreatedAtBefore(eq(OrderStatus.PENDING_PAYMENT), any(Instant.class)))
+        when(orders.findIdsByStatusAndCreatedAtBefore(eq(OrderStatus.PENDING_PAYMENT), any(Instant.class), any()))
                 .thenReturn(List.of());
 
         int cancelledCount = service.expirePendingOrders(Duration.ofMinutes(15));
@@ -347,16 +377,17 @@ class OrderServiceImplTest {
     }
 
     @Test
-    void expirationPropagatesRestoreFailureForTransactionRollback() {
+    void expirationPropagatesRestoreFailureForSingleOrderTransactionRollback() {
         Order order = order(10L, 42L);
         order.setStatus(OrderStatus.PENDING_PAYMENT);
-        when(orders.findByStatusAndCreatedAtBefore(eq(OrderStatus.PENDING_PAYMENT), any()))
-                .thenReturn(List.of(order));
+        order.setCreatedAt(Instant.now().minus(30, ChronoUnit.MINUTES));
+        when(orders.findByIdForUpdateSkipLocked(10L)).thenReturn(Optional.of(order));
         when(orderItems.findByOrderId(10L)).thenReturn(List.of(OrderItem.builder()
                 .variantId(7L).quantity(1).build()));
         doThrow(new IllegalStateException("stock unavailable")).when(inventoryService)
                 .restoreForOrder(eq(10L), isNull(), any());
-        assertThrows(IllegalStateException.class, () -> service.expirePendingOrders());
+        assertThrows(IllegalStateException.class,
+                () -> expirationTxHelper.expireSinglePendingOrder(10L, Instant.now().minus(15, ChronoUnit.MINUTES)));
     }
 
     @Test
@@ -689,6 +720,54 @@ class OrderServiceImplTest {
                 .build();
 
         assertThrows(DataIntegrityViolationException.class, () -> service.createOrder(42L, request));
+    }
+
+    @Test
+    void returnedOrderDoesNotReleaseCouponOrUseCancelRestore() {
+        Order delivered = order(55L, 42L);
+        delivered.setStatus(OrderStatus.DELIVERED);
+        delivered.setCouponCodeSnapshot("VIP500");
+        when(orders.findByIdForUpdate(55L)).thenReturn(Optional.of(delivered));
+        when(histories.findByOrderIdOrderByChangedAtDesc(55L)).thenReturn(List.of());
+        when(orderItems.findByOrderId(55L)).thenReturn(List.of(OrderItem.builder()
+                .id(1L).productId(10L).variantId(7L).quantity(1).unitPrice(new BigDecimal("25000000")).build()));
+
+        service.updateOrderStatus(99L, 55L, new UpdateOrderStatusRequest(OrderStatus.RETURNED, "Máy lỗi màn hình"));
+
+        assertEquals(OrderStatus.RETURNED, delivered.getStatus());
+        verify(inventoryService).restoreForReturnedOrder(eq(55L), eq(99L), any());
+        verify(inventoryService, never()).restoreForOrder(any(), any(), any());
+        verify(couponService, never()).releaseForOrder(any());
+        verify(eventPublisher, never()).publishEvent(any(OrderCancelledEvent.class));
+    }
+
+    @Test
+    void expirePendingOrdersIsolatesFailureSoHealthyOrdersStillExpire() {
+        Order brokenOrder = order(201L, 42L);
+        brokenOrder.setStatus(OrderStatus.PENDING_PAYMENT);
+        brokenOrder.setCreatedAt(Instant.now().minus(30, ChronoUnit.MINUTES));
+
+        Order healthyOrder = order(202L, 43L);
+        healthyOrder.setStatus(OrderStatus.PENDING_PAYMENT);
+        healthyOrder.setCreatedAt(Instant.now().minus(30, ChronoUnit.MINUTES));
+
+        when(orders.findIdsByStatusAndCreatedAtBefore(eq(OrderStatus.PENDING_PAYMENT), any(), any()))
+                .thenReturn(List.of(201L, 202L));
+        when(orders.findByIdForUpdateSkipLocked(201L)).thenReturn(Optional.of(brokenOrder));
+        when(orders.findByIdForUpdateSkipLocked(202L)).thenReturn(Optional.of(healthyOrder));
+        when(orderItems.findByOrderId(201L)).thenReturn(List.of(OrderItem.builder()
+                .id(1L).variantId(7L).quantity(1).unitPrice(BigDecimal.TEN).build()));
+        when(orderItems.findByOrderId(202L)).thenReturn(List.of(OrderItem.builder()
+                .id(2L).variantId(8L).quantity(1).unitPrice(BigDecimal.TEN).build()));
+        doThrow(new IllegalStateException("poison order")).when(inventoryService)
+                .restoreForOrder(eq(201L), isNull(), any());
+
+        int cancelledCount = service.expirePendingOrders(Duration.ofMinutes(15));
+
+        assertEquals(1, cancelledCount);
+        assertEquals(OrderStatus.CANCELLED, healthyOrder.getStatus());
+        verify(inventoryService).restoreForOrder(eq(202L), isNull(), any());
+        verify(eventPublisher).publishEvent(new OrderCancelledEvent(202L, true));
     }
 
     private Order order(Long id, Long userId) {

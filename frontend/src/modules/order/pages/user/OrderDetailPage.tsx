@@ -94,6 +94,11 @@ export const OrderDetailPage = () => {
       setCancelling(true);
       const updated = await orderApi.cancelOrder(order.id, cancelReason.trim() || undefined);
       setOrder(updated);
+      try {
+        setPayment(await paymentApi.getByOrder(updated.id));
+      } catch {
+        // Giữ nguyên trạng thái payment hiện tại nếu không tìm thấy bản ghi payment
+      }
       setCancelModalOpen(false);
       setCancelReason('');
       toast(`Đã hủy đơn hàng #${order.orderCode}.`);
@@ -177,6 +182,18 @@ export const OrderDetailPage = () => {
               ))}
             </div>
           )}
+          {order.statusHistories.some((h) => h.note) && (
+            <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid var(--line)' }}>
+              <p className="small muted" style={{ marginBottom: 6 }}>Ghi chú cập nhật trạng thái</p>
+              {order.statusHistories.filter((h) => h.note).map((h) => (
+                <p key={h.id} className="small" style={{ marginBottom: 4 }}>
+                  <strong>{ORDER_STATUS[h.toStatus]?.label ?? h.toStatus}</strong>
+                  <span className="muted"> · {formatDateTime(h.changedAt)} — </span>
+                  {h.note}
+                </p>
+              ))}
+            </div>
+          )}
         </section>
 
         <div className="grid2">
@@ -219,6 +236,11 @@ export const OrderDetailPage = () => {
             <h3 className="panel-title">Giao hàng & thanh toán</h3>
             <p><strong>{order.recipientName}</strong> · {order.recipientPhone}</p>
             <p className="small muted" style={{ marginTop: 4 }}>{order.shippingAddress}</p>
+            {order.note && (
+              <p className="small" style={{ marginTop: 8 }}>
+                <span className="muted">Ghi chú giao hàng: </span>{order.note}
+              </p>
+            )}
             {payment && (
               <div className="row between wrap" style={{ marginTop: 12 }}>
                 <span className="small muted">Thanh toán ({payment.method})</span>

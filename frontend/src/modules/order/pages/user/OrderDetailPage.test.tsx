@@ -102,6 +102,72 @@ describe('OrderDetailPage', () => {
     });
   });
 
+  it('hiển thị ghi chú giao hàng và ghi chú lịch sử trạng thái, đồng thời nạp lại payment sau khi hủy đơn', async () => {
+    const user = userEvent.setup();
+    const initialOrder = {
+      ...sampleOrder('PENDING_PAYMENT'),
+      note: 'Giao giờ hành chính, gọi trước 15 phút',
+      statusHistories: [
+        {
+          id: 1,
+          fromStatus: null,
+          toStatus: 'PENDING_PAYMENT' as const,
+          changedAt: '2026-10-15T10:00:00Z',
+          changedBy: 42,
+          note: 'Khởi tạo đơn online',
+        },
+      ],
+    };
+    const cancelledOrder = {
+      ...initialOrder,
+      status: 'CANCELLED' as const,
+      statusHistories: [
+        {
+          id: 2,
+          fromStatus: 'PENDING_PAYMENT' as const,
+          toStatus: 'CANCELLED' as const,
+          changedAt: '2026-10-15T10:05:00Z',
+          changedBy: 42,
+          note: 'Đổi cấu hình khác',
+        },
+        ...initialOrder.statusHistories,
+      ],
+    };
+    vi.mocked(orderApi.getMineById).mockResolvedValue(initialOrder);
+    vi.mocked(orderApi.cancelOrder).mockResolvedValue(cancelledOrder);
+    vi.mocked(paymentApi.getByOrder)
+      .mockResolvedValueOnce({
+        id: 50,
+        orderId: 10,
+        method: 'VNPAY',
+        amount: 25000000,
+        status: 'PENDING',
+        createdAt: '2026-10-15T10:00:00Z',
+        expiresAt: '2026-10-15T10:15:00Z',
+      })
+      .mockResolvedValueOnce({
+        id: 50,
+        orderId: 10,
+        method: 'VNPAY',
+        amount: 25000000,
+        status: 'CANCELLED',
+        createdAt: '2026-10-15T10:00:00Z',
+        expiresAt: '2026-10-15T10:15:00Z',
+      });
+
+    renderDetail();
+
+    expect(await screen.findByText(/Giao giờ hành chính, gọi trước 15 phút/i)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Hủy đơn hàng' }));
+    await user.type(screen.getByPlaceholderText(/Đổi cấu hình/i), 'Đổi cấu hình khác');
+    await user.click(screen.getByRole('button', { name: 'Xác nhận hủy đơn' }));
+
+    await waitFor(() => {
+      expect(screen.getByText('Đã hủy thanh toán')).toBeInTheDocument();
+      expect(screen.getByText(/Đổi cấu hình khác/i)).toBeInTheDocument();
+    });
+  });
+
   it('hiển thị nút Thanh toán VNPay khi đơn đang PENDING_PAYMENT', async () => {
     const user = userEvent.setup();
     const assignSpy = vi.fn();

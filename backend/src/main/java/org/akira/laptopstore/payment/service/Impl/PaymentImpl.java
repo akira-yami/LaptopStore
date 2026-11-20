@@ -2,6 +2,8 @@ package org.akira.laptopstore.payment.service.Impl;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.Collection;
+import java.util.List;
 import java.util.UUID;
 
 import org.akira.laptopstore.payment.dto.request.RecordCodPaymentRequest;
@@ -61,7 +63,14 @@ public class PaymentImpl implements PaymentService {
                         throw new InvalidPaymentException(
                                         "Unsupported payment method");
                 }
-                if (paymentRepository.existsByOrderId(request.getOrderId())) {
+                // Idempotent: vì OrderCreatedEvent đã tự khởi tạo Payment PENDING cùng transaction tạo đơn,
+                // nên nếu client gọi lại POST /payments với cùng phương thức và Payment còn PENDING thì trả về bản ghi sẵn có.
+                Payment existing = paymentRepository.findByOrderId(request.getOrderId()).orElse(null);
+                if (existing != null) {
+                        if (existing.getMethod() == request.getMethod()
+                                        && existing.getStatus() == PaymentStatus.PENDING) {
+                                return toResponse(existing);
+                        }
                         throw new PaymentAlreadyExistsException(
                                         "Payment already exists for this order");
                 }
@@ -117,6 +126,17 @@ public class PaymentImpl implements PaymentService {
                                                                 "Payment not found for order: " + orderId));
 
                 return toResponse(payment);
+        }
+
+        @Override
+        @Transactional(readOnly = true)
+        public List<PaymentResponse> getByOrderIdsForStaff(Collection<Long> orderIds) {
+                if (orderIds == null || orderIds.isEmpty()) {
+                        return List.of();
+                }
+                return paymentRepository.findByOrderIdIn(orderIds).stream()
+                                .map(this::toResponse)
+                                .toList();
         }
 
         @Transactional

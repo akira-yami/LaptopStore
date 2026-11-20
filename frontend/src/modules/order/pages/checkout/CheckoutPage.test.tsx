@@ -198,4 +198,44 @@ describe('CheckoutPage', () => {
       expect(assignSpy).toHaveBeenCalledWith('https://sandbox.vnpayment.vn/checkout?ref=126');
     });
   });
+
+  it('hiển thị cảnh báo lỗi thay vì nuốt lỗi khi khởi tạo thanh toán COD thất bại', async () => {
+    const user = userEvent.setup();
+    vi.mocked(orderApi.createOrder).mockResolvedValue({
+      id: 127,
+      userId: 42,
+      orderCode: 'ORD-127',
+      status: 'WAITING_CONFIRMATION',
+      totalItems: 1,
+      subtotal: 20000000,
+      discountAmount: 0,
+      shippingFee: 0,
+      totalAmount: 20000000,
+      recipientName: 'Phan Anh Khang',
+      recipientPhone: '0901234567',
+      shippingAddress: '123 Nguyen Trai, P2, Q5, TP.HCM',
+      couponCodeSnapshot: null,
+      items: [],
+      statusHistories: [],
+      createdAt: '2026-10-15T10:00:00Z',
+      updatedAt: '2026-10-15T10:00:00Z',
+    });
+    vi.mocked(paymentApi.startPayment).mockRejectedValue(new Error('Network error'));
+
+    render(
+      <ToastProvider>
+        <MemoryRouter>
+          <CheckoutPage />
+        </MemoryRouter>
+      </ToastProvider>
+    );
+
+    const submitBtn = await screen.findByRole('button', { name: /Đặt hàng/i });
+    await user.click(submitBtn);
+
+    await waitFor(() => {
+      expect(screen.getByText(/chưa đồng bộ trạng thái thanh toán COD/i)).toBeInTheDocument();
+      expect(navigateMock).toHaveBeenCalledWith('/orders/127');
+    });
+  });
 });

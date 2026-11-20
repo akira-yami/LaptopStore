@@ -36,4 +36,8 @@ public class OrderStatusHistory {
 
     @Column(name = "changed_by_user_id")
     private Long changedByUserId;
+
+    // Ghi chú của nhân viên khi chuyển trạng thái hoặc lý do hủy đơn của khách/hệ thống.
+    @Column(name = "note", length = 500)
+    private String note;
 }
