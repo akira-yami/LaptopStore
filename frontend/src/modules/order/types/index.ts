@@ -10,7 +10,7 @@ export type OrderStatus =
   | 'CANCELLED'
   | 'RETURNED';
 
-export type CheckoutPaymentMethod = 'COD' | 'VNPAY';
+export type CheckoutPaymentMethod = 'COD' | 'VNPAY' | 'STORE_CREDIT';
 
 export interface OrderSummary {
   id: number;
@@ -20,6 +20,7 @@ export interface OrderSummary {
   totalAmount: number;
   recipientName: string;
   createdAt: string;
+  cancellationRequestReason?: string | null;
 }
 
 export interface OrderItem {
@@ -51,6 +52,7 @@ export interface OrderDetail extends OrderSummary {
   recipientPhone: string;
   shippingAddress: string;
   couponCodeSnapshot: string | null;
+  paymentMethod?: CheckoutPaymentMethod | null;
   note?: string | null;
   items: OrderItem[];
   statusHistories: OrderStatusHistory[];

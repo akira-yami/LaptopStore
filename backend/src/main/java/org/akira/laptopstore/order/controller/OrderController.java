@@ -115,7 +115,7 @@ public class OrderController {
         return ResponseEntity.ok(orderService.updateOrderStatus(userDetails.getId(), orderId, request));
     }
 
-    // Khách hàng chủ động hủy đơn của mình
+    // Khách gửi yêu cầu hủy đơn COD hoặc hủy đơn online đang chờ thanh toán.
     @PostMapping("/me/orders/{orderId}/cancel")
     public ResponseEntity<OrderResponse> cancelOwnOrder(
             @AuthenticationPrincipal CustomUserDetails userDetails,

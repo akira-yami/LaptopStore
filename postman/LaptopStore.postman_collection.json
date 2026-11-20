@@ -2477,7 +2477,7 @@
                 "orders"
               ]
             },
-            "description": "Đặt hàng từ toàn bộ sản phẩm trong giỏ hàng. Idempotency-Key tự sinh bằng {{$guid}} chống đặt trùng.",
+            "description": "Đặt hàng từ toàn bộ sản phẩm trong giỏ hàng. Dùng paymentMethod STORE_CREDIT để trả toàn bộ bằng ví. Số dư thiếu trả 409 INSUFFICIENT_STORE_CREDIT. Idempotency-Key tự sinh bằng {{$guid}} chống đặt trùng.",
             "auth": {
               "type": "bearer",
               "bearer": [
@@ -2621,7 +2621,7 @@
           ]
         },
         {
-          "name": "05. Cancel Own Order",
+          "name": "05. Request COD Cancellation or Cancel Unpaid VNPay Order",
           "request": {
             "method": "POST",
             "header": [],
@@ -2646,7 +2646,7 @@
                 }
               ]
             },
-            "description": "Khách hàng chủ động hủy đơn khi đơn còn ở trạng thái PENDING.",
+            "description": "Chủ đơn COD có thể gửi yêu cầu hủy ở WAITING_CONFIRMATION, CONFIRMED hoặc PACKING. Phản hồi 200 giữ nguyên trạng thái đơn và trả cancellationRequestReason. Query reason là tùy chọn, tối đa 500 ký tự với đơn COD. Đơn VNPay ở PENDING_PAYMENT được hủy ngay.",
             "auth": {
               "type": "bearer",
               "bearer": [
@@ -2804,7 +2804,7 @@
                 "status"
               ]
             },
-            "description": "Chuyển trạng thái đơn hàng theo luồng: PENDING -> CONFIRMED -> SHIPPING -> DELIVERED (hoặc CANCELLED).",
+            "description": "STAFF/ADMIN cập nhật trạng thái đơn hàng. Để duyệt yêu cầu hủy COD, gửi {\"status\":\"CANCELLED\"}. Phản hồi 200 trả đơn CANCELLED và ghi lý do khách yêu cầu hủy vào lịch sử. Các bước xử lý tiếp theo trả 409 CANCELLATION_REQUEST_PENDING trong lúc chờ duyệt.",
             "auth": {
               "type": "bearer",
               "bearer": [
@@ -3299,6 +3299,187 @@
                   "});"
                 ]
               }
+            }
+          ]
+        },
+        {
+          "name": "Yêu cầu hoàn tiền",
+          "item": [
+            {
+              "name": "Khách gửi yêu cầu hoàn tiền",
+              "request": {
+                "method": "POST",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{accessToken}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "url": "{{baseUrl}}/api/v1/me/orders/{{orderId}}/refund-request",
+                "description": "Chủ đơn đã thanh toán gửi lý do và có thể chọn tối đa 3 ảnh minh chứng JPEG hoặc PNG.",
+                "body": {
+                  "mode": "formdata",
+                  "formdata": [
+                    {
+                      "key": "reason",
+                      "value": "Sản phẩm gặp lỗi khi nhận hàng",
+                      "type": "text"
+                    },
+                    {
+                      "key": "images",
+                      "type": "file",
+                      "src": [],
+                      "disabled": true,
+                      "description": "Bật trường này để chọn ảnh minh chứng JPEG hoặc PNG."
+                    }
+                  ]
+                }
+              },
+              "response": [],
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test('Tạo yêu cầu chờ duyệt', function () {",
+                      "  pm.response.to.have.status(201);",
+                      "  const refund = pm.response.json();",
+                      "  pm.expect(refund.status).to.eql('PENDING');",
+                      "  pm.collectionVariables.set('refundRequestId', refund.id);",
+                      "  if (refund.evidenceIds.length) pm.collectionVariables.set('refundEvidenceId', refund.evidenceIds[0]);",
+                      "});"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Khách xem yêu cầu mới nhất",
+              "request": {
+                "method": "GET",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{accessToken}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "url": "{{baseUrl}}/api/v1/me/orders/{{orderId}}/refund-request",
+                "description": "Trả 200 nếu đã gửi yêu cầu hoặc 204 nếu chưa có."
+              },
+              "response": []
+            },
+            {
+              "name": "Khách xem ảnh minh chứng",
+              "request": {
+                "method": "GET",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{accessToken}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "url": "{{baseUrl}}/api/v1/me/refund-requests/{{refundRequestId}}/evidence/{{refundEvidenceId}}",
+                "description": "Ảnh chỉ có thể đọc theo quyền chủ đơn."
+              },
+              "response": []
+            },
+            {
+              "name": "Quản trị viên xem yêu cầu chờ duyệt",
+              "request": {
+                "method": "GET",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{adminAccessToken}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "url": "{{baseUrl}}/api/v1/admin/refund-requests?status=PENDING&page=0",
+                "description": "Trả danh sách phân trang gồm trạng thái đơn hàng, lý do, số tiền và ID ảnh minh chứng. Có thể lọc theo orderIds phân cách bằng dấu phẩy."
+              },
+              "response": []
+            },
+            {
+              "name": "Quản trị viên xem ảnh minh chứng",
+              "request": {
+                "method": "GET",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{adminAccessToken}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "url": "{{baseUrl}}/api/v1/admin/refund-requests/{{refundRequestId}}/evidence/{{refundEvidenceId}}",
+                "description": "Tải từng ảnh của yêu cầu bằng quyền ADMIN."
+              },
+              "response": []
+            },
+            {
+              "name": "Quản trị viên duyệt hoặc từ chối",
+              "request": {
+                "method": "PUT",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{adminAccessToken}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "url": "{{baseUrl}}/api/v1/admin/refund-requests/{{refundRequestId}}/decision",
+                "description": "Dùng approved=true để duyệt và cộng khoản hoàn vào StoreCredit của chủ đơn. Nếu đơn đã giao, thêm returnOrder=true sau khi nhận lại hàng. Để từ chối, dùng approved=false và nhập lý do trong note.",
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"approved\": true\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "response": []
+            },
+            {
+              "name": "Khách xem ví StoreCredit",
+              "request": {
+                "method": "GET",
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{accessToken}}",
+                      "type": "string"
+                    }
+                  ]
+                },
+                "url": "{{baseUrl}}/api/v1/me/store-credit",
+                "description": "Trả số dư khả dụng và tối đa 20 giao dịch gần đây của tài khoản hiện tại."
+              },
+              "response": []
             }
           ]
         }

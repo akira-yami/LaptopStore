@@ -1,5 +1,6 @@
 import { ToastProvider } from '@/components/ui';
 import { paymentApi } from '@/modules/payment/api/paymentApi';
+import { refundApi } from '@/modules/payment/api/refundApi';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
@@ -34,6 +35,14 @@ vi.mock('@/modules/payment/api/paymentApi', () => ({
     getByOrder: vi.fn(),
     startPayment: vi.fn(),
     createVnpaySession: vi.fn(),
+  },
+}));
+
+vi.mock('@/modules/payment/api/refundApi', () => ({
+  refundApi: {
+    getLatest: vi.fn(),
+    submit: vi.fn(),
+    getEvidence: vi.fn(),
   },
 }));
 
@@ -85,21 +94,63 @@ describe('OrderDetailPage', () => {
     vi.mocked(paymentApi.getByOrder).mockRejectedValue(new Error('404'));
   });
 
-  it('cho phép khách hủy đơn khi ở trạng thái WAITING_CONFIRMATION', async () => {
+  it('gửi lý do và ảnh minh chứng khi đơn đã thanh toán', async () => {
     const user = userEvent.setup();
-    vi.mocked(orderApi.getMineById).mockResolvedValue(sampleOrder('WAITING_CONFIRMATION'));
-    vi.mocked(orderApi.cancelOrder).mockResolvedValue(sampleOrder('CANCELLED'));
+    vi.mocked(orderApi.getMineById).mockResolvedValue(sampleOrder('CONFIRMED'));
+    vi.mocked(paymentApi.getByOrder).mockResolvedValue({
+      id: 50, orderId: 10, method: 'VNPAY', amount: 25000000, status: 'PAID',
+      createdAt: '2026-10-15T10:00:00Z', expiresAt: null,
+    });
+    vi.mocked(refundApi.getLatest).mockResolvedValue(null);
+    vi.mocked(refundApi.submit).mockResolvedValue({
+      id: 9, orderId: 10, orderStatus: 'CONFIRMED', amount: 25000000, reason: 'Máy bị lỗi', status: 'PENDING',
+      createdAt: '2026-10-15T11:00:00Z', reviewedAt: null, reviewedByUserId: null, reviewNote: null,
+      creditedToStoreCredit: false, evidenceIds: [5],
+    });
+    vi.mocked(refundApi.getEvidence).mockRejectedValue(new Error('Không tải được ảnh'));
+    renderDetail();
+
+    await user.click(await screen.findByRole('button', { name: 'Yêu cầu hoàn tiền' }));
+    expect(screen.getByRole('button', { name: 'Gửi yêu cầu hoàn tiền' })).toBeDisabled();
+    await user.type(screen.getByLabelText('Lý do hoàn tiền'), 'Máy bị lỗi');
+    const proof = new File(['proof'], 'minh-chung.png', { type: 'image/png' });
+    await user.upload(screen.getByLabelText('Ảnh minh chứng (tùy chọn)'), proof);
+    expect(screen.getByText('minh-chung.png')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Gửi yêu cầu hoàn tiền' }));
+
+    expect(await screen.findByText('Chờ duyệt')).toBeInTheDocument();
+    expect(refundApi.submit).toHaveBeenCalledWith(10, 'Máy bị lỗi', [proof]);
+    expect(refundApi.getEvidence).toHaveBeenCalledWith(9, 5, 'me');
+  });
+
+  it.each(['WAITING_CONFIRMATION', 'CONFIRMED', 'PACKING'] as const)('cho phép khách gửi yêu cầu hủy đơn COD ở %s', async (status) => {
+    const user = userEvent.setup();
+    const order: OrderDetail = { ...sampleOrder(status), paymentMethod: 'COD' };
+    vi.mocked(orderApi.getMineById).mockResolvedValue(order);
+    vi.mocked(orderApi.cancelOrder).mockResolvedValue({ ...order, cancellationRequestReason: 'Đổi ý' });
 
     renderDetail();
 
-    const cancelBtn = await screen.findByRole('button', { name: 'Hủy đơn hàng' });
+    const cancelBtn = await screen.findByRole('button', { name: 'Yêu cầu hủy đơn hàng' });
     await user.click(cancelBtn);
     await user.type(screen.getByPlaceholderText(/Đổi cấu hình/i), 'Đổi ý');
-    await user.click(screen.getByRole('button', { name: 'Xác nhận hủy đơn' }));
+    await user.click(screen.getByRole('button', { name: 'Gửi yêu cầu hủy' }));
 
-    await waitFor(() => {
-      expect(orderApi.cancelOrder).toHaveBeenCalledWith(10, 'Đổi ý');
-    });
+    expect(await screen.findByText('Yêu cầu hủy đơn hàng đang chờ duyệt')).toBeInTheDocument();
+    expect(orderApi.cancelOrder).toHaveBeenCalledWith(10, 'Đổi ý');
+    expect(screen.queryByRole('button', { name: 'Yêu cầu hủy đơn hàng' })).not.toBeInTheDocument();
+  });
+
+  it.each([
+    ['SHIPPING', 'COD'],
+    ['PACKING', 'VNPAY'],
+  ] as const)('ẩn nút yêu cầu hủy ở %s với %s', async (status, paymentMethod) => {
+    vi.mocked(orderApi.getMineById).mockResolvedValue({ ...sampleOrder(status), paymentMethod });
+
+    renderDetail();
+
+    await screen.findByText('Hành trình đơn hàng');
+    expect(screen.queryByRole('button', { name: /hủy đơn hàng/i })).not.toBeInTheDocument();
   });
 
   it('hiển thị ghi chú giao hàng và ghi chú lịch sử trạng thái, đồng thời nạp lại payment sau khi hủy đơn', async () => {
@@ -195,6 +246,7 @@ describe('OrderDetailPage', () => {
     renderDetail();
 
     const payBtn = await screen.findByRole('button', { name: 'Thanh toán VNPay' });
+    expect(screen.queryByRole('button', { name: 'Yêu cầu hoàn tiền' })).not.toBeInTheDocument();
     await user.click(payBtn);
 
     await waitFor(() => {

@@ -74,6 +74,7 @@ export const OrderHistoryPage = () => {
                     <p className="small muted">{formatDateTime(order.createdAt)} · {order.recipientName}</p>
                   </div>
                   <OrderStatusBadge status={order.status} />
+                  {order.cancellationRequestReason && <span className="small muted">Chờ duyệt yêu cầu hủy</span>}
                 </div>
                 <div className="order-actions">
                   <span className="muted small">{order.totalItems} sản phẩm · {ORDER_STATUS[order.status]?.label ?? order.status}</span>

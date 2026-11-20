@@ -34,6 +34,8 @@ import { AIChatPage } from '@/modules/ai/pages/AIChatPage';
 // Cart & Order
 import { CartPage } from '@/modules/cart/pages/CartPage';
 import { StaffOrderListPage } from '@/modules/order/pages/admin/StaffOrderListPage';
+import { AdminRefundRequestsPage } from '@/modules/payment/pages/admin/AdminRefundRequestsPage';
+import { StoreCreditPage } from '@/modules/payment/pages/user/StoreCreditPage';
 import { CheckoutPage } from '@/modules/order/pages/checkout/CheckoutPage';
 import { OrderDetailPage } from '@/modules/order/pages/user/OrderDetailPage';
 import { OrderHistoryPage } from '@/modules/order/pages/user/OrderHistoryPage';
@@ -66,7 +68,6 @@ const ScrollToTop: React.FC = () => {
 };
 
 const operationPages = [
-  { path: 'orders', Page: StaffOrderListPage },
   { path: 'inventory', Page: InventoryPage },
   { path: 'procurement', Page: PurchaseOrderListPage },
   { path: 'suppliers', Page: SupplierListPage },
@@ -107,6 +108,7 @@ export const AppRouter: React.FC = () => (
               <Route path="/profile" element={<ProfilePage />} />
               <Route path="/me/addresses" element={<ProfilePage />} />
               <Route path="/me/loyalty" element={<LoyaltyPage />} />
+              <Route path="/me/store-credit" element={<StoreCreditPage />} />
               <Route path="/cart" element={<CartPage />} />
               <Route path="/checkout" element={<CheckoutPage />} />
               <Route path="/orders" element={<OrderHistoryPage />} />
@@ -123,6 +125,7 @@ export const AppRouter: React.FC = () => (
               <Route element={<StaffLayout />}>
                 <Route index element={<Navigate to={STAFF_HOME} replace />} />
                 <Route path="dashboard" element={<OpsDashboardPage workspace="staff" />} />
+                <Route path="orders" element={<StaffOrderListPage />} />
                 {operationPages.map(({ path, Page }) => <Route key={path} path={path} element={<Page />} />)}
                 <Route path="*" element={<Navigate to={STAFF_HOME} replace />} />
               </Route>
@@ -134,10 +137,12 @@ export const AppRouter: React.FC = () => (
             <Route path="/admin" element={<AdminLayout />}>
               <Route index element={<Navigate to={ADMIN_HOME} replace />} />
               <Route path="dashboard" element={<OpsDashboardPage workspace="admin" />} />
+              <Route path="orders" element={<StaffOrderListPage canReviewReturns />} />
               <Route path="products" element={<AdminProductPage />} />
               <Route path="categories" element={<AdminCategoryPage />} />
               <Route path="promotions/*" element={<PromotionRoutes />} />
               <Route path="users" element={<AdminUserListPage />} />
+              <Route path="refund-requests" element={<AdminRefundRequestsPage />} />
               {operationPages.map(({ path, Page }) => <Route key={path} path={path} element={<Page />} />)}
               <Route path="*" element={<Navigate to={ADMIN_HOME} replace />} />
             </Route>

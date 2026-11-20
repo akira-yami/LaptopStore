@@ -37,7 +37,9 @@
 
 - Một transaction bao trùm `order`/`items`/`history`, trừ tồn/ledger (`InventoryService.deductForOrder`), lượt sử dụng coupon (`CouponService.reserveForOrder`) và dọn giỏ (`CartService.clearPurchasedItems`).
 - Hỗ trợ chọn địa chỉ qua `addressId` (kiểm tra quyền sở hữu qua `AddressService.getAddressById` và ghép snapshot địa chỉ) hoặc truyền trực tiếp `recipientName`, `recipientPhone`, `shippingAddress`.
-- Validate phương thức thanh toán (`COD`, `VNPAY`), kiểm tra tồn kho khả dụng (`availableQuantity`) của từng biến thể và hiệu lực/điều kiện mã giảm giá (`CouponService.evaluateForCheckout`) trước khi lưu `Order`.
+- Validate phương thức thanh toán (`COD`, `VNPAY`, `STORE_CREDIT`), kiểm tra tồn kho khả dụng (`availableQuantity`) của từng biến thể và hiệu lực/điều kiện mã giảm giá (`CouponService.evaluateForCheckout`) trước khi lưu `Order`.
+- Đơn StoreCredit bắt đầu ở `CONFIRMED` sau khi module payment trừ đủ số dư và tạo payment `PAID` trong transaction checkout.
+- `OrderRefundService.confirmRefund` ghi `RETURNED` và nhập lại kho khi ADMIN chấp nhận yêu cầu của đơn đã giao, trong transaction duyệt hoàn tiền.
 - Giá, phí vận chuyển, giảm giá và tổng thanh toán được tính hoàn toàn ở server.
 - Hỗ trợ `Idempotency-Key` ràng buộc theo user; cùng key và cùng payload trả lại đơn đã tạo, khác payload trả lỗi.
 
@@ -46,6 +48,9 @@
 - Trạng thái đóng gói là `PACKING`; V6 chuyển dữ liệu `PACKED` cũ trong orders/history.
 - STAFF/ADMIN đọc chi tiết qua GET /api/v1/staff/orders/{orderId}.
 - PUT /api/v1/staff/orders/{orderId}/status chỉ cho bước kế tiếp hợp lệ; đơn online chỉ xác nhận sau payment đã xác minh. DELIVERY_FAILED giao lại dưới 3 lần thất bại.
+- Chủ đơn COD gửi yêu cầu qua `POST /api/v1/me/orders/{orderId}/cancel` khi đơn ở `WAITING_CONFIRMATION`, `CONFIRMED` hoặc `PACKING`. Đơn giữ nguyên trạng thái và hiển thị `cancellationRequestReason` trong danh sách và chi tiết.
+- STAFF/ADMIN duyệt bằng `PUT /api/v1/staff/orders/{orderId}/status` với `{"status":"CANCELLED"}`. Yêu cầu đang chờ duyệt chặn các bước xử lý tiếp theo. Khi duyệt, lý do của khách và người duyệt được ghi vào lịch sử trạng thái, sau đó thực hiện hoàn kho, giải phóng lượt dùng mã giảm giá và hủy thanh toán COD đang chờ thu.
+- Flyway V11 bổ sung `orders.payment_method` và `orders.cancellation_request_reason`, đồng thời điền phương thức của đơn cũ từ bản ghi thanh toán hoặc trạng thái lúc tạo đơn.
 - Hủy và cập nhật trạng thái khóa hàng order. Lặp cùng trạng thái/hủy trả kết quả hiện tại, không ghi lại lịch sử hoặc hoàn kho/coupon.
 - Quét hết hạn khóa các đơn PENDING_PAYMENT, xử lý status/history/stock/coupon cùng transaction; lỗi bất kỳ rollback cả đợt và được báo ra scheduler.
 - UI flow theo Figma: /cart → /checkout → /orders/:id; /orders; /staff/orders → /staff/orders/:id. Các trạng thái loading, rỗng, lỗi, hết hạn và giao thất bại được xử lý trên từng màn.

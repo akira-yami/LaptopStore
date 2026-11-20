@@ -3,6 +3,7 @@ package org.akira.laptopstore.order.dto.response;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import org.akira.laptopstore.order.entity.enums.CheckoutPaymentMethod;
 import org.akira.laptopstore.order.entity.enums.OrderStatus;
 
 import java.math.BigDecimal;
@@ -30,6 +31,8 @@ public class OrderResponse {
     private List<OrderStatusHistoryResponse> statusHistories;
     private Instant createdAt;
     private Instant updatedAt;
+    private CheckoutPaymentMethod paymentMethod;
+    private String cancellationRequestReason;
 
     public OrderResponse(
             Long id, Long userId, String orderCode, OrderStatus status,
@@ -41,6 +44,6 @@ public class OrderResponse {
     ) {
         this(id, userId, orderCode, status, subtotal, discountAmount, shippingFee, totalAmount,
                 recipientName, recipientPhone, shippingAddress, couponCodeSnapshot, null,
-                items, statusHistories, createdAt, updatedAt);
+                items, statusHistories, createdAt, updatedAt, null, null);
     }
 }

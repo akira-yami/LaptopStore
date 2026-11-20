@@ -22,8 +22,8 @@ Response thành công dùng DTO trực tiếp, danh sách dùng `PageResponse<T>
 | GET `/me/cart`; POST `/me/cart/items`; PATCH/DELETE `/me/cart/items/{id}` | cart | USER; ownership |
 | POST `/me/orders` | order | USER; Idempotency-Key bắt buộc |
 | GET `/me/orders`, `/me/orders/{id}` | order | USER; ownership |
-| POST `/me/orders/{id}/cancel` | order | Chủ đơn; PENDING và đủ điều kiện |
-| GET `/staff/orders`; PATCH `/staff/orders/{id}/status` | order | STAFF/ADMIN; state transition |
+| POST `/me/orders/{id}/cancel` | order | Chủ đơn. COD ở `WAITING_CONFIRMATION`, `CONFIRMED` hoặc `PACKING`; VNPay ở `PENDING_PAYMENT` |
+| GET `/staff/orders`; PUT `/staff/orders/{id}/status` | order | STAFF/ADMIN; chuyển trạng thái hoặc duyệt yêu cầu hủy |
 | POST `/me/orders/{id}/payment-session` | payment | USER; ownership; online payable |
 | POST `/staff/orders/{id}/cod-payment` | payment | STAFF/ADMIN; DELIVERED; chống lặp |
 | Provider callback path theo adapter được chốt | payment | Xác minh provider; không dựa JWT khách |
@@ -72,9 +72,40 @@ Response 201 minh họa:
 }
 ```
 
-`paymentStatus` là field DTO được suy ra từ `payments.status`, không phải cột của `orders`. `paymentMethod` được lưu ở `payments.method`.
+Module thanh toán quản lý `payments.status` và `payments.method`. `orders.payment_method` lưu phương thức đã chọn khi đặt hàng để kiểm tra điều kiện yêu cầu hủy COD.
 
 Retry cùng key/payload trả order cũ với 200; cùng key khác payload trả 409. BigDecimal được serialize dạng số JSON theo contract MVP VND; frontend không dùng số do nó tính làm số tiền authoritative.
+
+## Yêu cầu hủy đơn COD
+
+`POST /api/v1/me/orders/{id}/cancel` nhận query `reason` tùy chọn, tối đa 500 ký tự với đơn COD. Phản hồi `200` trả chi tiết đơn với trạng thái hiện tại và `cancellationRequestReason`. Gửi lại yêu cầu đang chờ duyệt trả về lý do đã lưu. API trả `404` nếu đơn nằm ngoài quyền sở hữu và `400` nếu trạng thái chưa đủ điều kiện. Đơn VNPay ở `PENDING_PAYMENT` vẫn được hủy ngay qua endpoint này.
+
+STAFF/ADMIN duyệt qua `PUT /api/v1/staff/orders/{id}/status` với `{"status":"CANCELLED"}`. Phản hồi `200` trả chi tiết đơn đã hủy và xóa lý do khỏi trường chờ duyệt. Lịch sử trạng thái lưu lý do của khách và ID người duyệt. API trả `409 CANCELLATION_REQUEST_PENDING` nếu cố chuyển sang bước xử lý tiếp theo trong lúc chờ duyệt.
+
+## Yêu cầu hoàn tiền
+
+| Method và path (sau `/api/v1`) | Quyền | Kết quả |
+|---|---|---|
+| GET `/me/orders/{id}/refund-request` | Chủ đơn | `200` trả yêu cầu mới nhất, `204` khi chưa có |
+| POST `/me/orders/{id}/refund-request` | Chủ đơn có thanh toán `PAID` | `201` trả yêu cầu `PENDING` |
+| GET `/me/refund-requests/{id}/evidence/{evidenceId}` | Chủ đơn | `200` trả ảnh riêng tư |
+| GET `/admin/refund-requests` | ADMIN | `200` trả danh sách phân trang, lọc theo `status` và `orderIds` tùy chọn |
+| GET `/admin/refund-requests/{id}/evidence/{evidenceId}` | ADMIN | `200` trả ảnh riêng tư |
+| PUT `/admin/refund-requests/{id}/decision` | ADMIN | `200` trả yêu cầu đã duyệt hoặc đã từ chối |
+
+Gửi yêu cầu bằng `multipart/form-data` với `reason` từ 1–1.000 ký tự và tối đa 3 phần `images` tùy chọn. Mỗi ảnh JPEG hoặc PNG có dung lượng tối đa 5 MB và 20 triệu điểm ảnh. Số tiền lấy từ thanh toán. Yêu cầu có trường `evidenceIds` để tải từng ảnh theo quyền truy cập.
+
+Phản hồi yêu cầu có `orderStatus` để hiển thị trạng thái giao hàng. Khi đơn đã giao và yêu cầu đang chờ duyệt, quản trị viên dùng `{"approved":true,"returnOrder":true}` sau khi đã nhận lại hàng. Backend kiểm tra lại trạng thái dưới khóa, chuyển đơn sang `RETURNED`, hoàn kho và cộng StoreCredit trong cùng transaction. Sai điều kiện trả `409 REFUND_ORDER_STATUS_CHANGED`. API cập nhật trạng thái đơn thông thường trả `409 RETURN_REQUIRES_REFUND_REVIEW` nếu đích là `RETURNED`.
+
+Duyệt yêu cầu ở các trạng thái khác bằng `{"approved":true}`. Để từ chối, dùng `{"approved":false,"note":"Lý do từ chối"}`. Hệ thống lưu người xử lý và thời điểm. Yêu cầu được cộng tiền trả `creditedToStoreCredit: true`. Gửi lại cùng quyết định trả kết quả trước đó, gửi quyết định ngược lại trả `409 REFUND_REQUEST_REVIEWED`.
+
+API trả `409 ORDER_NOT_PAID` nếu đơn chưa thanh toán và `409 REFUND_REQUEST_EXISTS` nếu đã có yêu cầu chờ duyệt hoặc đã duyệt. Khách có thể gửi yêu cầu mới sau khi bị từ chối.
+
+## Ví StoreCredit
+
+`GET /api/v1/me/store-credit` trả `balance` và tối đa 20 giao dịch gần đây của tài khoản đăng nhập. Ví chưa có giao dịch trả số dư 0 và danh sách rỗng.
+
+`POST /api/v1/me/orders` nhận thêm `paymentMethod: "STORE_CREDIT"`. Backend trừ toàn bộ `totalAmount` từ ví trong cùng transaction tạo đơn. Đơn trả trạng thái `CONFIRMED`, payment là `PAID`. Nếu số dư thiếu, API trả `409 INSUFFICIENT_STORE_CREDIT` và rollback checkout. Áp dụng `Idempotency-Key` như các phương thức thanh toán khác.
 
 ## Response lỗi thống nhất
 

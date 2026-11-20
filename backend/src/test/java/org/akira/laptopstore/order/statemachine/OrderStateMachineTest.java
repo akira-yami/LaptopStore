@@ -35,9 +35,11 @@ class OrderStateMachineTest {
     }
 
     @Test
-    @DisplayName("Khách hàng có thể hủy đơn khi ở WAITING_CONFIRMATION")
-    void userCanCancelAtWaitingConfirmation() {
-        assertDoesNotThrow(() -> stateMachine.validateTransition(OrderStatus.WAITING_CONFIRMATION, OrderStatus.CANCELLED, false, 0));
+    @DisplayName("Khách hàng có thể hủy trực tiếp đơn online đang chờ thanh toán")
+    void userCanCancelWhileWaitingForOnlinePayment() {
+        assertDoesNotThrow(() -> stateMachine.validateTransition(OrderStatus.PENDING_PAYMENT, OrderStatus.CANCELLED, false, 0));
+        assertThrows(ValidationException.class, () ->
+                stateMachine.validateTransition(OrderStatus.WAITING_CONFIRMATION, OrderStatus.CANCELLED, false, 0));
     }
 
     @Test

@@ -4,8 +4,10 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 
 import org.akira.laptopstore.order.dto.response.OrderItemReviewInfo;
+import org.akira.laptopstore.order.entity.enums.OrderStatus;
 
 public interface OrderQueryService {
 
@@ -24,6 +26,8 @@ public interface OrderQueryService {
     List<Long> getOrderItemIdsByUser(Long userId);
 
     void validateOrderOwner(Long orderId, Long userId);
+
+    Map<Long, OrderStatus> getOrderStatuses(Collection<Long> orderIds);
 
     void validateOrderForOnlinePayment(Long orderId);
 

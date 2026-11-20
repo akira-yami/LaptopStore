@@ -34,6 +34,7 @@ import org.akira.laptopstore.order.repository.OrderItemRepository;
 import org.akira.laptopstore.order.repository.OrderRepository;
 import org.akira.laptopstore.order.repository.OrderStatusHistoryRepository;
 import org.akira.laptopstore.order.service.OrderService;
+import org.akira.laptopstore.order.service.OrderRefundService;
 import org.akira.laptopstore.order.service.impl.OrderCheckoutSupport.CheckoutPricing;
 import org.akira.laptopstore.order.service.impl.OrderCheckoutSupport.ResolvedShippingAddress;
 import org.akira.laptopstore.order.statemachine.OrderStateMachine;
@@ -49,6 +50,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.annotation.Propagation;
 
 import java.math.BigDecimal;
 import java.time.Duration;
@@ -59,14 +61,17 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 @Slf4j
 @Service
 @RequiredArgsConstructor
-public class OrderServiceImpl implements OrderService {
+public class OrderServiceImpl implements OrderService, OrderRefundService {
 
     private static final int EXPIRATION_BATCH_SIZE = 50;
+    private static final Set<OrderStatus> COD_CANCELLATION_STATUSES = Set.of(
+            OrderStatus.WAITING_CONFIRMATION, OrderStatus.CONFIRMED, OrderStatus.PACKING);
 
     private final OrderRepository orderRepository;
     private final OrderItemRepository orderItemRepository;
@@ -183,7 +188,7 @@ public class OrderServiceImpl implements OrderService {
             if (previous != null) {
                 List<OrderStatusHistory> previousHistories =
                         orderStatusHistoryRepository.findByOrderIdOrderByChangedAtDesc(previous.getId());
-                if (!sameCheckoutPayload(previous, previousHistories, resolvedShipping, requestedCouponCode, initialStatus)) {
+                    if (!sameCheckoutPayload(previous, previousHistories, resolvedShipping, requestedCouponCode, paymentMethod)) {
                     log.warn("Xung đột Idempotency-Key={} cho userId={}: thông tin nhận hàng/coupon/thanh toán không khớp đơn cũ orderId={}",
                             idempotencyKey, userId, previous.getId());
                     throw new BusinessException(
@@ -245,6 +250,7 @@ public class OrderServiceImpl implements OrderService {
                 .userId(userId)
                 .orderCode(OrderCodeGenerator.generate())
                 .status(initialStatus)
+                .paymentMethod(paymentMethod)
                 .subtotal(pricing.subtotal())
                 .discountAmount(pricing.discountAmount())
                 .shippingFee(pricing.shippingFee())
@@ -339,8 +345,7 @@ public class OrderServiceImpl implements OrderService {
                 cart.getItems().stream().map(CartSnapshot.Item::getCartItemId).toList()
         );
 
-        // 13. Phát sự kiện tạo đơn trong cùng transaction để module payment tự khởi tạo bản ghi Payment PENDING,
-        // tránh trường hợp đơn COD/VNPay bị mồ côi bản ghi payment nếu client rớt mạng sau khi tạo đơn.
+        // 13. Module payment tạo bản ghi thanh toán và trừ StoreCredit nếu được chọn, trong cùng transaction.
         eventPublisher.publishEvent(new OrderCreatedEvent(
                 order.getId(),
                 userId,
@@ -456,6 +461,10 @@ public class OrderServiceImpl implements OrderService {
         if (request == null || request.getStatus() == null) {
             throw new ValidationException("Trạng thái đơn hàng không được để trống");
         }
+        if (request.getStatus() == OrderStatus.RETURNED) {
+            throw new BusinessException(HttpStatus.CONFLICT, "RETURN_REQUIRES_REFUND_REVIEW",
+                    "Quản trị viên cần xử lý yêu cầu hoàn tiền để xác nhận trả hàng");
+        }
 
         Order order = orderRepository.findByIdForUpdate(orderId)
                 .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy đơn hàng: " + orderId));
@@ -467,6 +476,14 @@ public class OrderServiceImpl implements OrderService {
         if (currentStatus == targetStatus) {
             return toDetailResponse(order);
         }
+        String cancellationReason = order.getCancellationRequestReason();
+        if (cancellationReason != null && targetStatus != OrderStatus.CANCELLED) {
+            throw new BusinessException(HttpStatus.CONFLICT, "CANCELLATION_REQUEST_PENDING",
+                    "Đơn hàng đang chờ duyệt yêu cầu hủy");
+        }
+        if (currentStatus == OrderStatus.PACKING && targetStatus == OrderStatus.CANCELLED && cancellationReason == null) {
+            throw new ValidationException("Đơn đang chuẩn bị chỉ được hủy khi khách hàng đã gửi yêu cầu");
+        }
         if (currentStatus == OrderStatus.PENDING_PAYMENT && targetStatus == OrderStatus.CONFIRMED) {
             throw new ValidationException("Đơn online phải được xác nhận qua kết quả thanh toán");
         }
@@ -477,26 +494,13 @@ public class OrderServiceImpl implements OrderService {
 
         OrderStateMachine.validateTransition(currentStatus, targetStatus, true, deliveryAttempts);
 
-        order.setStatus(targetStatus);
-        orderRepository.save(order);
+        order.setCancellationRequestReason(cancellationReason);
+        recordStatusChange(order, targetStatus, actorId,
+                cancellationReason != null ? cancellationReason : checkoutSupport.normalize(request.getNote()));
 
-        orderStatusHistoryRepository.save(OrderStatusHistory.builder()
-                .order(order)
-                .fromStatus(currentStatus)
-                .toStatus(targetStatus)
-                .changedAt(Instant.now())
-                .changedByUserId(actorId)
-                .note(checkoutSupport.normalize(request.getNote()))
-                .build());
-
-        // Tách rõ 2 nghiệp vụ:
-        // - CANCELLED: hoàn kho CANCEL_RESTORE + nhả lượt coupon + phát sự kiện hủy Payment PENDING.
-        // - RETURNED (trả hàng sau giao): chỉ hoàn kho loại RETURN; KHÔNG nhả coupon đã tiêu dùng và KHÔNG hủy Payment đã PAID.
         if (targetStatus == OrderStatus.CANCELLED) {
             handleOrderCancellationSideEffects(order, actorId);
             eventPublisher.publishEvent(new OrderCancelledEvent(order.getId(), false));
-        } else if (targetStatus == OrderStatus.RETURNED) {
-            handleOrderReturnSideEffects(order, actorId);
         } else if (targetStatus == OrderStatus.DELIVERED) {
             loyaltyService.awardPointsForDeliveredOrder(
                     order.getUserId(),
@@ -510,6 +514,40 @@ public class OrderServiceImpl implements OrderService {
                 orderId, currentStatus, targetStatus, actorId);
 
         return toDetailResponse(order);
+    }
+
+    @Override
+    @Transactional(propagation = Propagation.MANDATORY)
+    public Long confirmRefund(Long orderId, Long adminId, Long refundRequestId, boolean returnOrder) {
+        Order order = orderRepository.findByIdForUpdate(orderId)
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy đơn hàng: " + orderId));
+        boolean delivered = order.getStatus() == OrderStatus.DELIVERED;
+        if (returnOrder != delivered) {
+            throw new BusinessException(HttpStatus.CONFLICT, "REFUND_ORDER_STATUS_CHANGED",
+                    delivered ? "Đơn đã giao. Hãy xác nhận trả hàng để duyệt yêu cầu."
+                            : "Thao tác trả hàng chỉ áp dụng cho đơn đã giao.");
+        }
+        if (returnOrder) {
+            OrderStateMachine.validateTransition(order.getStatus(), OrderStatus.RETURNED, true, 0);
+            recordStatusChange(order, OrderStatus.RETURNED, adminId,
+                    "Đã chấp nhận yêu cầu trả hàng #" + refundRequestId);
+            handleOrderReturnSideEffects(order, adminId);
+        }
+        return order.getUserId();
+    }
+
+    private void recordStatusChange(Order order, OrderStatus targetStatus, Long actorId, String note) {
+        OrderStatus previousStatus = order.getStatus();
+        order.setStatus(targetStatus);
+        orderRepository.save(order);
+        orderStatusHistoryRepository.save(OrderStatusHistory.builder()
+                .order(order)
+                .fromStatus(previousStatus)
+                .toStatus(targetStatus)
+                .changedAt(Instant.now())
+                .changedByUserId(actorId)
+                .note(note)
+                .build());
     }
 
     @Override
@@ -527,6 +565,20 @@ public class OrderServiceImpl implements OrderService {
         if (currentStatus == OrderStatus.CANCELLED) {
             log.info("Đơn hàng đã ở trạng thái CANCELLED trước đó: orderId={}, userId={}, bỏ qua xử lý lặp",
                     orderId, userId);
+            return toDetailResponse(order);
+        }
+        if (order.getPaymentMethod() == CheckoutPaymentMethod.COD) {
+            if (!COD_CANCELLATION_STATUSES.contains(currentStatus)) {
+                throw new ValidationException("Đơn COD chỉ được yêu cầu hủy khi chờ xác nhận, đã xác nhận hoặc đang chuẩn bị");
+            }
+            if (order.getCancellationRequestReason() == null) {
+                String requestReason = checkoutSupport.normalize(reason);
+                if (requestReason != null && requestReason.length() > 500) {
+                    throw new ValidationException("Lý do hủy đơn không được vượt quá 500 ký tự");
+                }
+                order.setCancellationRequestReason(requestReason != null ? requestReason : "Khách hàng yêu cầu hủy");
+                orderRepository.save(order);
+            }
             return toDetailResponse(order);
         }
         OrderStateMachine.validateTransition(currentStatus, OrderStatus.CANCELLED, false, 0);
@@ -644,9 +696,11 @@ public class OrderServiceImpl implements OrderService {
     }
 
     private OrderStatus resolveInitialStatus(CheckoutPaymentMethod paymentMethod) {
-        return paymentMethod == CheckoutPaymentMethod.VNPAY
-                ? OrderStatus.PENDING_PAYMENT
-                : OrderStatus.WAITING_CONFIRMATION;
+        return switch (paymentMethod) {
+            case COD -> OrderStatus.WAITING_CONFIRMATION;
+            case VNPAY -> OrderStatus.PENDING_PAYMENT;
+            case STORE_CREDIT -> OrderStatus.CONFIRMED;
+        };
     }
 
     // Hàm này được dùng để kiểm tra tính Idempotency, xem 1 yêu cầu đặt hàng có bị gửi nhiều lần không
@@ -655,7 +709,7 @@ public class OrderServiceImpl implements OrderService {
             List<OrderStatusHistory> histories,
             ResolvedShippingAddress resolvedShipping,
             String requestedCouponCode,
-            OrderStatus expectedInitialStatus
+            CheckoutPaymentMethod expectedPaymentMethod
     ) {
         OrderStatus originalInitialStatus = histories.stream()
                 .filter(h -> h.getFromStatus() == null)
@@ -667,7 +721,10 @@ public class OrderServiceImpl implements OrderService {
                 && Objects.equals(order.getRecipientPhone(), resolvedShipping.recipientPhone())
                 && Objects.equals(order.getShippingAddress(), resolvedShipping.shippingAddress())
                 && Objects.equals(checkoutSupport.normalizeUpper(order.getCouponCodeSnapshot()), requestedCouponCode)
-                && originalInitialStatus == expectedInitialStatus;
+                && (order.getPaymentMethod() != null
+                    ? order.getPaymentMethod() == expectedPaymentMethod
+                    : expectedPaymentMethod != CheckoutPaymentMethod.STORE_CREDIT
+                        && originalInitialStatus == resolveInitialStatus(expectedPaymentMethod));
     }
 
     /**

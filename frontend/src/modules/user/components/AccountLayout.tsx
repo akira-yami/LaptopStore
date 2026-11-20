@@ -43,6 +43,7 @@ export const AccountLayout: React.FC<{ title: string; sub?: string; actions?: Re
             {link('/profile', 'Hồ sơ', 'user')}
             {link('/me/addresses', 'Sổ địa chỉ', 'home')}
             {link('/orders', 'Đơn hàng', 'orders')}
+            {link('/me/store-credit', 'StoreCredit', 'wallet')}
             {link('/me/loyalty', 'Loyalty & Coupon', 'tag')}
             {link('/cart', 'Giỏ hàng', 'cart')}
             {link('/ai-assistant', 'Tư vấn AI', 'sparkles')}

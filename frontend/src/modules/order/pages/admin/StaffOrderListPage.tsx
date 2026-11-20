@@ -1,13 +1,15 @@
 import { apiErrorMessage, Badge, formatDateTime, formatMoney, Icon, Modal, ORDER_STATUS, OrderStatusBadge, PageHeading, Pager, Spinner, useToast } from '@/components/ui';
 import { paymentApi } from '@/modules/payment/api/paymentApi';
-import { PaymentResponse } from '@/modules/payment/types';
+import { refundApi } from '@/modules/payment/api/refundApi';
+import { AdminRefundReviewModal, canReturnRefund } from '@/modules/payment/components/AdminRefundReviewModal';
+import { PAYMENT_METHOD_LABEL, PaymentResponse, RefundRequest } from '@/modules/payment/types';
 import { useCallback, useEffect, useState } from 'react';
 import { orderApi } from '../../api/orderApi';
 import { OrderDetail, OrderStatus, OrderSummary } from '../../types';
 
 const formatPaymentBadge = (payment?: PaymentResponse): { label: string; tone: 'green' | 'orange' | 'red' | 'neutral' } | null => {
   if (!payment) return null;
-  const methodLabel = payment.method === 'VNPAY' ? 'VNPay' : 'COD';
+  const methodLabel = PAYMENT_METHOD_LABEL[payment.method];
   if (payment.status === 'PAID') return { label: `${methodLabel} · Đã thanh toán`, tone: 'green' };
   if (payment.status === 'PENDING') {
     return {
@@ -19,7 +21,7 @@ const formatPaymentBadge = (payment?: PaymentResponse): { label: string; tone: '
   return { label: `${methodLabel} · Thất bại`, tone: 'red' };
 };
 
-// Khớp OrderStateMachine.VALID_TRANSITIONS và chặn chuyển tay PENDING_PAYMENT -> CONFIRMED ở backend.
+// Các bước xử lý thông thường. Đơn có yêu cầu hủy chờ staff/admin duyệt.
 const NEXT: Record<string, OrderStatus[]> = {
   CREATED: ['WAITING_CONFIRMATION', 'PENDING_PAYMENT'],
   PENDING_PAYMENT: ['CANCELLED'],
@@ -28,7 +30,6 @@ const NEXT: Record<string, OrderStatus[]> = {
   PACKING: ['SHIPPING'],
   SHIPPING: ['DELIVERED', 'DELIVERY_FAILED'],
   DELIVERY_FAILED: ['SHIPPING', 'CANCELLED'],
-  DELIVERED: ['RETURNED'],
 };
 
 const FILTERS = [
@@ -39,14 +40,18 @@ const FILTERS = [
   { value: 'PACKING', label: 'Đang chuẩn bị' },
   { value: 'SHIPPING', label: 'Đang giao' },
   { value: 'DELIVERED', label: 'Đã giao' },
+  { value: 'RETURNED', label: 'Đã trả hàng' },
   { value: 'CANCELLED', label: 'Đã hủy' },
 ];
 const PAGE_SIZE = 20;
 
-export const StaffOrderListPage = () => {
+export const StaffOrderListPage = ({ canReviewReturns = false }: { canReviewReturns?: boolean }) => {
   const toast = useToast();
   const [orders, setOrders] = useState<OrderSummary[]>([]);
   const [paymentsByOrderId, setPaymentsByOrderId] = useState<Record<number, PaymentResponse>>({});
+  const [returnsByOrderId, setReturnsByOrderId] = useState<Record<number, RefundRequest>>({});
+  const [returnLoadError, setReturnLoadError] = useState(false);
+  const [returnTarget, setReturnTarget] = useState<RefundRequest | null>(null);
   const [page, setPage] = useState(0);
   const [totalPages, setTotalPages] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -60,6 +65,7 @@ export const StaffOrderListPage = () => {
   const [recordingCod, setRecordingCod] = useState(false);
   const [note, setNote] = useState('');
   const [saving, setSaving] = useState(false);
+  const isCancellationApproval = pending?.to === 'CANCELLED' && Boolean(pending.order.cancellationRequestReason);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -72,6 +78,7 @@ export const StaffOrderListPage = () => {
     try {
       setLoading(true);
       setError(null);
+      setReturnLoadError(false);
       const res = await orderApi.getAllForStaff({
         page: p,
         size: PAGE_SIZE,
@@ -81,18 +88,24 @@ export const StaffOrderListPage = () => {
       setOrders(res.content);
       setTotalPages(res.totalPages);
       const ids = res.content.map((o) => o.id);
-      if (ids.length > 0) {
-        const list = await paymentApi.getByOrderIdsForStaff(ids).catch(() => [] as PaymentResponse[]);
-        setPaymentsByOrderId(Object.fromEntries(list.map((pay) => [pay.orderId, pay])));
-      } else {
-        setPaymentsByOrderId({});
-      }
+      const deliveredIds = res.content.filter((o) => o.status === 'DELIVERED').map((o) => o.id);
+      const [payments, refunds] = await Promise.all([
+        paymentApi.getByOrderIdsForStaff(ids).catch(() => [] as PaymentResponse[]),
+        canReviewReturns && deliveredIds.length > 0
+          ? refundApi.list(0, 'PENDING', deliveredIds).then((result) => result.content).catch(() => {
+            setReturnLoadError(true);
+            return [];
+          })
+          : Promise.resolve([]),
+      ]);
+      setPaymentsByOrderId(Object.fromEntries(payments.map((pay) => [pay.orderId, pay])));
+      setReturnsByOrderId(Object.fromEntries(refunds.filter(canReturnRefund).map((refund) => [refund.orderId, refund])));
     } catch {
       setError('Không thể tải danh sách đơn hàng.');
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [canReviewReturns]);
 
   useEffect(() => {
     void load(page, filter, debouncedKeyword);
@@ -167,6 +180,7 @@ export const StaffOrderListPage = () => {
           ))}
         </div>
       </div>
+      {returnLoadError && <p role="alert" className="notice red">Không thể tải yêu cầu trả hàng. Bấm Làm mới để thử lại.</p>}
 
       {loading ? <Spinner /> : (
         <div className="table-wrap">
@@ -179,7 +193,9 @@ export const StaffOrderListPage = () => {
                 <tr><td colSpan={7} className="table-empty">Không có đơn hàng phù hợp. Thử đổi bộ lọc.</td></tr>
               ) : orders.map((o) => {
                 const payment = paymentsByOrderId[o.id];
+                const returnRequest = canReviewReturns && o.status === 'DELIVERED' ? returnsByOrderId[o.id] : undefined;
                 const paymentBadge = formatPaymentBadge(payment);
+                const transitions: OrderStatus[] = o.cancellationRequestReason ? ['CANCELLED'] : NEXT[o.status] ?? [];
                 const canRecordCod = o.status === 'DELIVERED'
                   && payment?.method === 'COD'
                   && payment.status === 'PENDING';
@@ -190,10 +206,16 @@ export const StaffOrderListPage = () => {
                   <td>{o.totalItems}</td>
                   <td className="primary-cell">{formatMoney(o.totalAmount)}</td>
                   <td>{paymentBadge ? <Badge tone={paymentBadge.tone}>{paymentBadge.label}</Badge> : <span className="muted small">—</span>}</td>
-                  <td><OrderStatusBadge status={o.status} /></td>
+                  <td>
+                    <OrderStatusBadge status={o.status} />
+                    {o.cancellationRequestReason && <div className="subcell">Chờ duyệt yêu cầu hủy</div>}
+                  </td>
                   <td>
                     <div className="row" style={{ justifyContent: 'flex-end', gap: 8 }}>
                       <button type="button" className="btn sm" onClick={() => void openDetail(o.id)}>Xem</button>
+                      {returnRequest && (
+                        <button type="button" className="btn sm soft" onClick={() => setReturnTarget(returnRequest)}>Trả hàng</button>
+                      )}
                       {canRecordCod && (
                         <button
                           type="button"
@@ -203,14 +225,14 @@ export const StaffOrderListPage = () => {
                           Thu tiền COD
                         </button>
                       )}
-                      {(NEXT[o.status] ?? []).map((to) => (
+                      {transitions.map((to) => (
                         <button
                           key={to}
                           type="button"
                           className={`btn sm ${to === 'CANCELLED' || to === 'DELIVERY_FAILED' ? 'danger' : 'soft'}`}
                           onClick={() => { setNote(''); setPending({ order: o, to }); }}
                         >
-                          {ORDER_STATUS[to]?.label ?? to}
+                          {o.cancellationRequestReason ? 'Duyệt yêu cầu hủy' : ORDER_STATUS[to]?.label ?? to}
                         </button>
                       ))}
                     </div>
@@ -223,20 +245,36 @@ export const StaffOrderListPage = () => {
         </div>
       )}
       <Pager page={page} totalPages={totalPages} onChange={setPage} />
+      {canReviewReturns && returnTarget && (
+        <AdminRefundReviewModal key={returnTarget.id} request={returnTarget}
+          onClose={() => setReturnTarget(null)}
+          onReviewed={() => {
+            setReturnTarget(null);
+            void load(page, filter, debouncedKeyword);
+          }} />
+      )}
 
       <Modal
         open={!!pending}
-        title={pending ? `Chuyển đơn #${pending.order.orderCode} sang “${ORDER_STATUS[pending.to]?.label ?? pending.to}”?` : ''}
+        title={pending ? (isCancellationApproval
+          ? `Duyệt yêu cầu hủy đơn #${pending.order.orderCode}?`
+          : `Chuyển đơn #${pending.order.orderCode} sang “${ORDER_STATUS[pending.to]?.label ?? pending.to}”?`) : ''}
         onClose={() => setPending(null)}
         actions={<>
           <button type="button" className="btn" onClick={() => setPending(null)}>Hủy</button>
-          <button type="button" className="btn primary" disabled={saving} onClick={() => void confirmTransition()}>{saving ? 'Đang lưu...' : 'Xác nhận'}</button>
+          <button type="button" className="btn primary" disabled={saving} onClick={() => void confirmTransition()}>
+            {saving ? 'Đang lưu...' : isCancellationApproval ? 'Xác nhận duyệt hủy' : 'Xác nhận'}
+          </button>
         </>}
       >
         <p className="muted" style={{ marginBottom: 14 }}>Thao tác được ghi vào lịch sử đơn hàng.</p>
-        <label className="field"><span>Ghi chú (tùy chọn)</span>
-          <textarea maxLength={500} value={note} onChange={(e) => setNote(e.target.value)} style={{ minHeight: 70 }} />
-        </label>
+        {isCancellationApproval ? (
+          <p><strong>Lý do khách yêu cầu hủy</strong><br />{pending?.order.cancellationRequestReason}</p>
+        ) : (
+          <label className="field"><span>Ghi chú (tùy chọn)</span>
+            <textarea maxLength={500} value={note} onChange={(e) => setNote(e.target.value)} style={{ minHeight: 70 }} />
+          </label>
+        )}
       </Modal>
 
       <Modal
@@ -274,6 +312,9 @@ export const StaffOrderListPage = () => {
               </div>
               <OrderStatusBadge status={detail.status} />
             </div>
+            {detail.cancellationRequestReason && (
+              <p><strong>Yêu cầu hủy đang chờ duyệt</strong><br />{detail.cancellationRequestReason}</p>
+            )}
             <div className="table-wrap">
               <table className="data-table">
                 <thead><tr><th>Sản phẩm</th><th>SKU</th><th>SL</th><th>Thành tiền</th></tr></thead>

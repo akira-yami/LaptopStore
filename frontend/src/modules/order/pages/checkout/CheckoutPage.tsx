@@ -5,6 +5,7 @@ import { Cart } from '@/modules/cart/types';
 import { userApi } from '@/modules/user/api/userApi';
 import { Address } from '@/modules/user/types';
 import { paymentApi } from '@/modules/payment/api/paymentApi';
+import { storeCreditApi } from '@/modules/payment/api/storeCreditApi';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { orderApi } from '../../api/orderApi';
@@ -43,6 +44,8 @@ export const CheckoutPage: React.FC = () => {
   const [recipientPhone, setRecipientPhone] = useState<string>('');
   const [shippingAddress, setShippingAddress] = useState<string>('');
   const [paymentMethod, setPaymentMethod] = useState<CheckoutPaymentMethod>('COD');
+  const [storeCreditBalance, setStoreCreditBalance] = useState<number | null>(null);
+  const [storeCreditLoading, setStoreCreditLoading] = useState(true);
   const [couponCode, setCouponCode] = useState<string>('');
   const [appliedCouponCode, setAppliedCouponCode] = useState<string | null>(null);
   const [note, setNote] = useState<string>('');
@@ -96,6 +99,18 @@ export const CheckoutPage: React.FC = () => {
   useEffect(() => {
     void loadCheckoutData();
   }, [loadCheckoutData]);
+
+  useEffect(() => {
+    let active = true;
+    storeCreditApi.getWallet().then((wallet) => {
+      if (active) setStoreCreditBalance(wallet.balance);
+    }).catch(() => {
+      if (active) setStoreCreditBalance(null);
+    }).finally(() => {
+      if (active) setStoreCreditLoading(false);
+    });
+    return () => { active = false; };
+  }, []);
 
   const addressPayload = () => ({
     addressId: useSavedAddress ? selectedAddressId : null,
@@ -181,6 +196,12 @@ export const CheckoutPage: React.FC = () => {
       );
       await refreshCart();
 
+      if (paymentMethod === 'STORE_CREDIT') {
+        toast(`Đã thanh toán đơn ${createdOrder.orderCode} bằng StoreCredit.`);
+        navigate(`/orders/${createdOrder.id}`);
+        return;
+      }
+
       if (paymentMethod === 'VNPAY') {
         try {
           const payment = await paymentApi.startPayment({ orderId: createdOrder.id, method: 'VNPAY' });
@@ -223,6 +244,7 @@ export const CheckoutPage: React.FC = () => {
   const discountAmount = preview ? preview.discountAmount : 0;
   const shippingFee = preview ? preview.shippingFee : 0;
   const totalAmount = preview ? preview.totalAmount : Math.max(0, subtotal - discountAmount + shippingFee);
+  const canPayWithStoreCredit = storeCreditBalance !== null && storeCreditBalance >= totalAmount;
 
   if (loading) {
     return <div className="ls-container section"><Spinner label="Đang tải thông tin thanh toán" /></div>;
@@ -304,6 +326,18 @@ export const CheckoutPage: React.FC = () => {
                 <input type="radio" name="paymentMethod" value="VNPAY" checked={paymentMethod === 'VNPAY'} onChange={() => setPaymentMethod('VNPAY')} />
                 <span><strong>VNPay</strong><small>Thanh toán trực tuyến qua cổng VNPay</small></span>
               </label>
+              <label className="payment-option">
+                <input type="radio" name="paymentMethod" value="STORE_CREDIT" checked={paymentMethod === 'STORE_CREDIT'}
+                  disabled={!canPayWithStoreCredit} onChange={() => setPaymentMethod('STORE_CREDIT')} />
+                <span>
+                  <strong>StoreCredit</strong>
+                  <small>
+                    {storeCreditBalance === null
+                      ? (storeCreditLoading ? 'Đang tải số dư…' : 'Không thể tải số dư.')
+                      : `Số dư ${formatMoney(storeCreditBalance)}${canPayWithStoreCredit ? '' : ' · Chưa đủ để thanh toán'}`}
+                  </small>
+                </span>
+              </label>
             </div>
           </section>
 
@@ -349,7 +383,8 @@ export const CheckoutPage: React.FC = () => {
             <div className="summary-line total"><span>Tổng cộng</span><strong>{formatMoney(totalAmount)}</strong></div>
             <p className="small muted">Đã bao gồm thuế VAT.</p>
           </aside>
-          <button type="submit" className="btn primary full" disabled={submitting} style={{ minHeight: 50 }}>
+          <button type="submit" className="btn primary full"
+            disabled={submitting || (paymentMethod === 'STORE_CREDIT' && !canPayWithStoreCredit)} style={{ minHeight: 50 }}>
             {submitting ? 'Đang tạo đơn hàng...' : <>Đặt hàng <Icon name="arrow-right" /></>}
           </button>
           <Link to="/cart" className="text-btn small" style={{ justifyContent: 'center' }}><Icon name="arrow-left" /> Quay lại giỏ hàng</Link>

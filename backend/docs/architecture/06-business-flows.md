@@ -32,16 +32,18 @@ flowchart TD
 | Từ | Đến | Ai và điều kiện | Tác động |
 |---|---|---|---|
 | PENDING | CONFIRMED | STAFF/ADMIN; online phải PAID | History; không trừ tồn thêm |
-| PENDING | CANCELLED | Chủ đơn hoặc STAFF/ADMIN; online chưa PAID | Hoàn tồn/coupon một lần |
+| PENDING_PAYMENT | CANCELLED | Chủ đơn hoặc STAFF/ADMIN khi chờ thanh toán | Hoàn tồn/coupon một lần |
+| WAITING_CONFIRMATION | CANCELLED | STAFF/ADMIN, bao gồm duyệt yêu cầu hủy COD | Hoàn tồn/coupon một lần |
 | CONFIRMED | PACKING | STAFF/ADMIN | History |
 | CONFIRMED | CANCELLED | STAFF/ADMIN, chưa bàn giao; online chưa PAID | Hoàn tồn/coupon một lần |
 | PACKING | SHIPPING | STAFF/ADMIN | Ghi thông tin bàn giao |
+| PACKING | CANCELLED | STAFF/ADMIN duyệt yêu cầu hủy COD | Hoàn tồn/coupon một lần |
 | SHIPPING | DELIVERED | STAFF/ADMIN xác nhận giao | Không đổi stock; COD thu tiền là bước payment riêng |
 | SHIPPING | DELIVERY_FAILED | STAFF/ADMIN | Giữ tồn đã trừ |
 | DELIVERY_FAILED | SHIPPING | STAFF/ADMIN giao lại | Không đổi stock |
 | DELIVERY_FAILED | CANCELLED | STAFF/ADMIN; xác nhận hàng đã về kho và online chưa PAID | Hoàn tồn/coupon đúng một lần |
 
-DELIVERED và CANCELLED là trạng thái cuối trong MVP. USER chỉ tự hủy PENDING; STAFF xử lý các trường hợp khác theo bảng. Đơn online đã PAID muốn hủy/hoàn phải có quy trình hoàn tiền bổ sung, không ép vào endpoint hủy hiện tại. Mỗi lần chuyển lưu `from_status`, `to_status`, `changed_by_user_id`, `changed_at`; ERD không có cột reason trong bảng history.
+Chủ đơn COD có thể yêu cầu hủy ở `WAITING_CONFIRMATION`, `CONFIRMED` và `PACKING`. Đơn giữ trạng thái hiện tại và tạm dừng xử lý trong lúc chờ duyệt. Khi duyệt, hệ thống ghi người duyệt và lý do của khách vào lịch sử trạng thái. Mỗi lần chuyển lưu `from_status`, `to_status`, `changed_by_user_id`, `changed_at` và `note` nếu có.
 
 ## Hủy và payment callback đồng thời
 
@@ -49,9 +51,15 @@ Hủy khóa order, đọc trạng thái từ `payments` nếu có rồi chuyển
 
 ## Thanh toán
 
-Payment có trạng thái nghiệp vụ như PENDING/PAID/FAILED; hoàn tiền đầy đủ/partial ngoài MVP. Trạng thái và phương thức thanh toán nằm trong `payments`, không có cột tương ứng ở `orders`. COD có thể tạo payment gắn order và cập nhật `payments.status` khi thu tiền. DELIVERED đơn thuần chưa chứng minh đã thu tiền.
+Module thanh toán quản lý trạng thái như PENDING/PAID/FAILED trong `payments`. `orders.payment_method` ghi lại phương thức khách đã chọn lúc đặt hàng. COD cập nhật `payments.status` khi thu tiền.
 
 Online: payment kiểm tra order và số tiền → tạo attempt PENDING có idempotency key → commit → gọi provider/mô phỏng ngoài transaction → callback xác minh → ghi kết quả và thông báo order service trong cùng transaction. Callback FAILED lặp hoặc đến sau PAID không làm PAID lùi về FAILED. Payment attempt thứ hai thành công phải giữ record và đưa vào đối soát thay vì ghi đè lịch sử.
+
+Chủ đơn có thanh toán PAID gửi yêu cầu hoàn toàn bộ số tiền đã thanh toán, kèm lý do và ảnh minh chứng nếu có. Khi ADMIN duyệt, hệ thống cộng tiền vào ví StoreCredit của chủ đơn và ghi giao dịch trong cùng transaction. Khách theo dõi kết quả trong chi tiết đơn và dùng số dư để thanh toán toàn bộ đơn mới.
+
+Với đơn `DELIVERED`, ADMIN xem lý do và ảnh minh chứng của yêu cầu đang chờ. Khi xác nhận đã nhận lại hàng, hệ thống ghi `RETURNED`, nhập lại kho và cộng StoreCredit trong cùng transaction. Khi từ chối, lý do được lưu trên yêu cầu và đơn vẫn ở `DELIVERED`.
+
+Checkout bằng StoreCredit trừ số tiền cuối cùng sau mã giảm giá, ghi giao dịch và tạo payment PAID. Đơn bắt đầu ở CONFIRMED. Nếu số dư thiếu, checkout rollback đơn hàng, tồn kho, coupon và giỏ hàng. Khi một yêu cầu hoàn tiền đã duyệt theo quy trình cũ, hệ thống giữ nguyên kết quả và lịch sử.
 
 ## Nhập hàng
 

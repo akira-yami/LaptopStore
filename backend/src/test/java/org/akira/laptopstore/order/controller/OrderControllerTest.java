@@ -37,6 +37,7 @@ import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -68,7 +69,7 @@ class OrderControllerTest {
     void userCanReadOnlyTheirOrderEndpoints() throws Exception {
         CustomUserDetails principal = principal(42L, "ROLE_USER");
         OrderSummaryResponse summary = new OrderSummaryResponse(10L, "ORD-10", OrderStatus.CONFIRMED,
-                2, new BigDecimal("25000000"), "Nguyen Van A", Instant.parse("2026-10-01T10:00:00Z"));
+                2, new BigDecimal("25000000"), "Nguyen Van A", Instant.parse("2026-10-01T10:00:00Z"), "Đổi cấu hình");
         OrderResponse detail = new OrderResponse(10L, 42L, "ORD-10", OrderStatus.CONFIRMED,
                 new BigDecimal("25000000"), BigDecimal.ZERO, BigDecimal.ZERO, new BigDecimal("25000000"),
                 "Nguyen Van A", "0900000000", "Ho Chi Minh City", null,
@@ -78,7 +79,8 @@ class OrderControllerTest {
 
         mockMvc.perform(get("/api/v1/me/orders").with(user(principal)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.content[0].orderCode").value("ORD-10"));
+                .andExpect(jsonPath("$.content[0].orderCode").value("ORD-10"))
+                .andExpect(jsonPath("$.content[0].cancellationRequestReason").value("Đổi cấu hình"));
         mockMvc.perform(get("/api/v1/me/orders/10").with(user(principal)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.userId").value(42L));
@@ -147,6 +149,20 @@ class OrderControllerTest {
                 .andExpect(status().isOk());
 
         verify(orderService).getAllOrders(any());
+    }
+
+    @Test
+    void onlyStaffAndAdminCanApproveCancellation() throws Exception {
+        mockMvc.perform(put("/api/v1/staff/orders/10/status").with(user(principal(42L, "ROLE_USER")))
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"status\":\"CANCELLED\"}"))
+                .andExpect(status().isForbidden());
+        verifyNoInteractions(orderService);
+
+        for (String role : List.of("ROLE_STAFF", "ROLE_ADMIN")) {
+            mockMvc.perform(put("/api/v1/staff/orders/10/status").with(user(principal(99L, role)))
+                            .contentType(MediaType.APPLICATION_JSON).content("{\"status\":\"CANCELLED\"}"))
+                    .andExpect(status().isOk());
+        }
     }
 
     @Test
