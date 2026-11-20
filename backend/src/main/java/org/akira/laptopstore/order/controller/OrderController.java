@@ -10,7 +10,10 @@ import org.akira.laptopstore.order.dto.response.OrderDashboardSummaryResponse;
 import org.akira.laptopstore.order.dto.response.OrderPageResponse;
 import org.akira.laptopstore.order.dto.response.OrderResponse;
 import org.akira.laptopstore.order.dto.response.OrderSummaryResponse;
+import org.akira.laptopstore.order.entity.enums.OrderStatus;
 import org.akira.laptopstore.order.service.OrderService;
+
+import java.util.List;
 import org.akira.laptopstore.security.principal.CustomUserDetails;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
@@ -28,13 +31,17 @@ public class OrderController {
 
     private final OrderService orderService;
 
-    // Lấy danh sách đơn hàng của chính họ
+    // Lấy danh sách đơn hàng của chính họ (hỗ trợ lọc trạng thái và phân trang phía server)
     @GetMapping("/me/orders")
     public ResponseEntity<OrderPageResponse<OrderSummaryResponse>> getOwnOrders(
             @AuthenticationPrincipal CustomUserDetails userDetails,
+            @RequestParam(name = "status", required = false) List<OrderStatus> statuses,
             @PageableDefault(size = 20, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable
     ) {
-        return ResponseEntity.ok(OrderPageResponse.from(orderService.getOwnOrders(userDetails.getId(), pageable)));
+        if (statuses == null || statuses.isEmpty()) {
+            return ResponseEntity.ok(OrderPageResponse.from(orderService.getOwnOrders(userDetails.getId(), pageable)));
+        }
+        return ResponseEntity.ok(OrderPageResponse.from(orderService.getOwnOrders(userDetails.getId(), statuses, pageable)));
     }
 
     // Lấy thông tin một đơn hàng cụ thể của chính họ
@@ -46,13 +53,18 @@ public class OrderController {
         return ResponseEntity.ok(orderService.getOwnOrder(userDetails.getId(), orderId));
     }
 
-    // Lấy toàn bộ đơn hàng trong hệ thống
+    // Lấy toàn bộ đơn hàng trong hệ thống (hỗ trợ lọc trạng thái và tìm theo mã đơn/tên khách phía server)
     @GetMapping("/staff/orders")
     @PreAuthorize("hasAnyRole('STAFF', 'ADMIN')")
     public ResponseEntity<OrderPageResponse<OrderSummaryResponse>> getAllOrders(
+            @RequestParam(name = "status", required = false) OrderStatus status,
+            @RequestParam(name = "keyword", required = false) String keyword,
             @PageableDefault(size = 20, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable
     ) {
-        return ResponseEntity.ok(OrderPageResponse.from(orderService.getAllOrders(pageable)));
+        if (status == null && (keyword == null || keyword.isBlank())) {
+            return ResponseEntity.ok(OrderPageResponse.from(orderService.getAllOrders(pageable)));
+        }
+        return ResponseEntity.ok(OrderPageResponse.from(orderService.getAllOrders(status, keyword, pageable)));
     }
 
     // Thống kê tổng quan đơn hàng cho Dashboard Staff/Admin

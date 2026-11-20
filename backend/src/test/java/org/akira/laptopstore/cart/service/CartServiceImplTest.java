@@ -134,6 +134,40 @@ class CartServiceImplTest {
         assertThrows(ValidationException.class, () -> service.addItemToCart(42L, new AddCartItemRequest(7L, 1)));
     }
 
+    @Test
+    void getCartGracefullyMarksDeletedVariantInsteadOfCrashingEntireCart() {
+        addLine(9L, 7L, 1);
+        addLine(10L, 999L, 2); // variant 999 đã bị xóa khỏi catalog
+        when(carts.findByUserIdWithItems(42L)).thenReturn(Optional.of(cart));
+
+        var response = assertDoesNotThrow(() -> service.getCart(42L));
+
+        assertEquals(2, response.getItems().size());
+        var missingItem = response.getItems().stream()
+                .filter(i -> Long.valueOf(999L).equals(i.getVariantId()))
+                .findFirst()
+                .orElseThrow();
+        assertEquals(BigDecimal.ZERO, missingItem.getUnitPrice());
+        assertEquals(BigDecimal.ZERO, missingItem.getLineTotal());
+        assertEquals(new BigDecimal("12500000"), response.getTotalAmount());
+    }
+
+    @Test
+    void clearCartIsIdempotentWhenUserHasNoCartYet() {
+        when(carts.findByUserIdForUpdate(42L)).thenReturn(Optional.empty());
+
+        assertDoesNotThrow(() -> service.clearCart(42L));
+    }
+
+    @Test
+    void cartItemResponseExposesProductIdThumbnailStockAndSellable() {
+        Class<?> itemClass = org.akira.laptopstore.cart.dto.response.CartItemResponse.class;
+        assertDoesNotThrow(() -> itemClass.getDeclaredField("productId"));
+        assertDoesNotThrow(() -> itemClass.getDeclaredField("thumbnailImage"));
+        assertDoesNotThrow(() -> itemClass.getDeclaredField("availableStock"));
+        assertDoesNotThrow(() -> itemClass.getDeclaredField("sellable"));
+    }
+
     private void addLine(Long id, Long variantId, int quantity) {
         cart.getItems().add(CartItem.builder().id(id).cart(cart).variantId(variantId).quantity(quantity).build());
     }
@@ -143,7 +177,8 @@ class CartServiceImplTest {
     }
 
     private CartVariantSnapshot variant(Long id, String variantStatus, String productStatus) {
-        return new CartVariantSnapshot(id, "Laptop", "Laptop (16GB - 512GB - Silver)", "SKU-" + id,
+        return new CartVariantSnapshot(id, 100L + id, "Laptop", "Laptop (16GB - 512GB - Silver)", "SKU-" + id,
+                "/uploads/laptop-" + id + ".jpg",
                 new BigDecimal("12500000"), 10,
                 "ACTIVE".equals(variantStatus) && "ACTIVE".equals(productStatus));
     }

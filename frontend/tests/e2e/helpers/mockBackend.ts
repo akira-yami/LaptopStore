@@ -52,11 +52,15 @@ export interface MockBackendState {
   } | null;
   cartItems: Array<{
     cartItemId: number;
+    productId?: number | null;
     variantId: number;
     productName: string;
     sku: string;
     variantName: string;
+    thumbnailImage?: string | null;
     quantity: number;
+    availableStock?: number | null;
+    sellable?: boolean;
     unitPrice: number;
     lineTotal: number;
   }>;
@@ -122,11 +126,15 @@ export function createInitialMockState(): MockBackendState {
     cartItems: [
       {
         cartItemId: 11,
+        productId: 10,
         variantId: 7,
         productName: 'MacBook Air M3',
         sku: 'MBA-M3-16-512',
         variantName: '16GB / 512GB / Silver',
+        thumbnailImage: null,
         quantity: 1,
+        availableStock: 10,
+        sellable: true,
         unitPrice: 28000000,
         lineTotal: 28000000,
       },
@@ -471,9 +479,13 @@ export async function setupMockBackend(page: Page, state: MockBackendState = cre
     }
 
     if (path === '/me/orders' && method === 'GET') {
+      const statuses = url.searchParams.getAll('status');
+      const filtered = statuses.length > 0
+        ? state.orders.filter((o) => statuses.includes(o.status))
+        : state.orders;
       return json(route, {
-        content: state.orders,
-        totalElements: state.orders.length,
+        content: filtered,
+        totalElements: filtered.length,
         totalPages: 1,
         number: 0,
         size: 20,
@@ -521,9 +533,15 @@ export async function setupMockBackend(page: Page, state: MockBackendState = cre
     }
 
     if (path === '/staff/orders' && method === 'GET') {
+      const statusParam = url.searchParams.get('status');
+      const keywordParam = (url.searchParams.get('keyword') ?? '').trim().toLowerCase();
+      const filtered = state.orders.filter((o) =>
+        (!statusParam || o.status === statusParam)
+        && (!keywordParam || o.orderCode.toLowerCase().includes(keywordParam) || o.recipientName.toLowerCase().includes(keywordParam))
+      );
       return json(route, {
-        content: state.orders,
-        totalElements: state.orders.length,
+        content: filtered,
+        totalElements: filtered.length,
         totalPages: 1,
         number: 0,
         size: 20,

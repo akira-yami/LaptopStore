@@ -238,4 +238,71 @@ describe('CheckoutPage', () => {
       expect(navigateMock).toHaveBeenCalledWith('/orders/127');
     });
   });
+
+  it('hiển thị phí ship rõ ràng, chỉ gửi coupon đã bấm Áp dụng và làm mới Idempotency-Key khi đổi phương thức thanh toán', async () => {
+    const user = userEvent.setup();
+    vi.mocked(orderApi.createOrder)
+      .mockRejectedValueOnce(new Error('Lỗi tạm thời'))
+      .mockResolvedValueOnce({
+        id: 128,
+        userId: 42,
+        orderCode: 'ORD-128',
+        status: 'PENDING_PAYMENT',
+        totalItems: 1,
+        subtotal: 20000000,
+        discountAmount: 0,
+        shippingFee: 0,
+        totalAmount: 20000000,
+        recipientName: 'Phan Anh Khang',
+        recipientPhone: '0901234567',
+        shippingAddress: '123 Nguyen Trai, P2, Q5, TP.HCM',
+        couponCodeSnapshot: null,
+        items: [],
+        statusHistories: [],
+        createdAt: '2026-10-15T10:00:00Z',
+        updatedAt: '2026-10-15T10:00:00Z',
+      });
+    vi.mocked(paymentApi.startPayment).mockResolvedValue({
+      id: 32,
+      orderId: 128,
+      method: 'VNPAY',
+      amount: 20000000,
+      status: 'PENDING',
+      createdAt: '2026-10-15T10:00:00Z',
+      expiresAt: '2026-10-15T10:15:00Z',
+    });
+    vi.mocked(paymentApi.createVnpaySession).mockRejectedValue(new Error('skip redirect'));
+
+    render(
+      <ToastProvider>
+        <MemoryRouter>
+          <CheckoutPage />
+        </MemoryRouter>
+      </ToastProvider>
+    );
+
+    await screen.findByRole('button', { name: /Đặt hàng/i });
+    expect(screen.queryByText(/Bấm “Áp dụng” để tính/i)).not.toBeInTheDocument();
+    expect(screen.getByText('Miễn phí')).toBeInTheDocument();
+
+    // Gõ mã giảm giá nhưng KHÔNG bấm Áp dụng -> không được tự gửi couponCode làm lệch giá hiển thị
+    await user.type(screen.getByPlaceholderText('Nhập mã giảm giá'), 'UNAPPLIED10');
+    await user.click(screen.getByRole('button', { name: /Đặt hàng/i }));
+
+    await waitFor(() => {
+      expect(orderApi.createOrder).toHaveBeenCalledTimes(1);
+    });
+    const [firstPayload, firstKey] = vi.mocked(orderApi.createOrder).mock.calls[0];
+    expect(firstPayload.couponCode).toBeUndefined();
+
+    // Đổi phương thức thanh toán sang VNPAY -> Idempotency-Key phải được tạo mới
+    await user.click(screen.getByDisplayValue('VNPAY'));
+    await user.click(screen.getByRole('button', { name: /Đặt hàng/i }));
+
+    await waitFor(() => {
+      expect(orderApi.createOrder).toHaveBeenCalledTimes(2);
+    });
+    const [, secondKey] = vi.mocked(orderApi.createOrder).mock.calls[1];
+    expect(secondKey).not.toBe(firstKey);
+  });
 });

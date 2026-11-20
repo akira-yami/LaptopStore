@@ -11,17 +11,27 @@ import {
 } from '../types';
 
 export const orderApi = {
-  getMine: async (): Promise<PageResponse<OrderSummary>> => (
-    await apiClient.get<PageResponse<OrderSummary>>('/me/orders')
-  ).data,
+  getMine: async (params?: { page?: number; size?: number; status?: OrderStatus[] }): Promise<PageResponse<OrderSummary>> => {
+    const query = new URLSearchParams();
+    if (params?.page !== undefined) query.append('page', String(params.page));
+    if (params?.size !== undefined) query.append('size', String(params.size));
+    params?.status?.forEach((s) => query.append('status', s));
+    const qs = query.toString();
+    return (await apiClient.get<PageResponse<OrderSummary>>(qs ? `/me/orders?${qs}` : '/me/orders')).data;
+  },
 
   getMineById: async (orderId: string): Promise<OrderDetail> => (
     await apiClient.get<OrderDetail>(`/me/orders/${orderId}`)
   ).data,
 
-  getAllForStaff: async (params?: { page?: number; size?: number }): Promise<PageResponse<OrderSummary>> => (
-    await apiClient.get<PageResponse<OrderSummary>>('/staff/orders', { params })
-  ).data,
+  getAllForStaff: async (params?: { page?: number; size?: number; status?: OrderStatus | ''; keyword?: string }): Promise<PageResponse<OrderSummary>> => {
+    const query: Record<string, string | number> = {};
+    if (params?.page !== undefined) query.page = params.page;
+    if (params?.size !== undefined) query.size = params.size;
+    if (params?.status) query.status = params.status;
+    if (params?.keyword && params.keyword.trim()) query.keyword = params.keyword.trim();
+    return (await apiClient.get<PageResponse<OrderSummary>>('/staff/orders', { params: query })).data;
+  },
 
   getStaffOrderById: async (orderId: number): Promise<OrderDetail> => (
     await apiClient.get<OrderDetail>(`/staff/orders/${orderId}`)

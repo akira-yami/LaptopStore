@@ -4,7 +4,6 @@ import org.akira.laptopstore.cart.dto.response.CartItemResponse;
 import org.akira.laptopstore.cart.dto.response.CartResponse;
 import org.akira.laptopstore.cart.entity.Cart;
 import org.akira.laptopstore.catalog.dto.response.CartVariantSnapshot;
-import org.akira.laptopstore.exception.ResourceNotFoundException;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -18,8 +17,23 @@ public final class CartMapper {
         List<CartItemResponse> itemResponses = cart.getItems().stream()
                 .map(item -> {
                     CartVariantSnapshot variant = variantsById.get(item.getVariantId());
+                    // Nếu biến thể đã bị xóa khỏi catalog, không làm crash cả giỏ hàng:
+                    // đánh dấu sellable = false, availableStock = 0 để khách vẫn mở được giỏ và xóa dòng lỗi.
                     if (variant == null) {
-                        throw new ResourceNotFoundException("Product variant not found: " + item.getVariantId());
+                        return new CartItemResponse(
+                                item.getId(),
+                                null,
+                                item.getVariantId(),
+                                "Sản phẩm không còn tồn tại",
+                                "",
+                                "",
+                                null,
+                                item.getQuantity(),
+                                0,
+                                false,
+                                BigDecimal.ZERO,
+                                BigDecimal.ZERO
+                        );
                     }
                     String productName = variant.getProductName();
                     String variantName = variant.getVariantName();
@@ -27,11 +41,15 @@ public final class CartMapper {
                     BigDecimal lineTotal = unitPrice.multiply(BigDecimal.valueOf(item.getQuantity()));
                     return new CartItemResponse(
                             item.getId(),
+                            variant.getProductId(),
                             item.getVariantId(),
                             productName,
                             variant.getSku(),
                             variantName,
+                            variant.getThumbnailImage(),
                             item.getQuantity(),
+                            variant.getQuantity(),
+                            variant.isSellable(),
                             unitPrice,
                             lineTotal
                     );

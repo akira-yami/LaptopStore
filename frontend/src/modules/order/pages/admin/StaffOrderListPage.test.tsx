@@ -126,5 +126,14 @@ describe('StaffOrderListPage', () => {
     await waitFor(() => {
       expect(paymentApi.recordCodPayment).toHaveBeenCalledWith({ orderId: 2 });
     });
+
+    // Bấm chip lọc trạng thái "Đã giao" -> phải gửi status=DELIVERED lên server thay vì chỉ lọc client-side
+    await user.click(screen.getByRole('button', { name: 'Đã giao' }));
+    await waitFor(() => {
+      expect(orderApi.getAllForStaff).toHaveBeenCalledWith(expect.objectContaining({
+        page: 0,
+        status: 'DELIVERED',
+      }));
+    });
   });
 });

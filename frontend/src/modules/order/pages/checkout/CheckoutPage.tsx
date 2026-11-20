@@ -1,7 +1,6 @@
 import { useCart } from '@/app/providers/CartProvider';
 import { apiErrorMessage, Badge, EmptyState, formatMoney, Icon, PageHeading, ProductImage, Spinner, useToast } from '@/components/ui';
 import { cartApi } from '@/modules/cart/api/cartApi';
-import { useSkuProducts } from '@/modules/cart/hooks/useSkuProducts';
 import { Cart } from '@/modules/cart/types';
 import { userApi } from '@/modules/user/api/userApi';
 import { Address } from '@/modules/user/types';
@@ -34,6 +33,7 @@ export const CheckoutPage: React.FC = () => {
   const [shippingAddress, setShippingAddress] = useState<string>('');
   const [paymentMethod, setPaymentMethod] = useState<CheckoutPaymentMethod>('COD');
   const [couponCode, setCouponCode] = useState<string>('');
+  const [appliedCouponCode, setAppliedCouponCode] = useState<string | null>(null);
   const [note, setNote] = useState<string>('');
 
   const [preview, setPreview] = useState<CheckoutPreviewResponse | null>(null);
@@ -44,7 +44,19 @@ export const CheckoutPage: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [couponMessage, setCouponMessage] = useState<string | null>(null);
 
-  const products = useSkuProducts(cart?.items.map((i) => i.sku) ?? []);
+  // Tự động làm mới Idempotency-Key khi người dùng đổi bất kỳ dữ liệu cốt lõi nào của đơn hàng,
+  // tránh dính lỗi 409 IDEMPOTENCY_CONFLICT ngoài ý muốn sau khi chỉnh lại form.
+  useEffect(() => {
+    setIdempotencyKey(createIdempotencyKey());
+  }, [
+    useSavedAddress,
+    selectedAddressId,
+    recipientName,
+    recipientPhone,
+    shippingAddress,
+    paymentMethod,
+    appliedCouponCode,
+  ]);
 
   const loadCheckoutData = useCallback(async () => {
     try {
@@ -91,15 +103,27 @@ export const CheckoutPage: React.FC = () => {
         couponCode: couponCode.trim() || undefined,
       });
       setPreview(result);
+      setAppliedCouponCode(result.couponCode ?? null);
       setIdempotencyKey(createIdempotencyKey());
       setCouponMessage(result.couponCode
         ? `Đã áp dụng mã ${result.couponCode}: giảm ${formatMoney(result.discountAmount)}`
         : 'Đã cập nhật tạm tính đơn hàng.');
     } catch (err) {
       setPreview(null);
+      setAppliedCouponCode(null);
       setError(apiErrorMessage(err, 'Mã giảm giá không hợp lệ hoặc giỏ hàng có sản phẩm vượt quá tồn kho.'));
     } finally {
       setPreviewLoading(false);
+    }
+  };
+
+  const handleCouponInputChange = (value: string) => {
+    const normalized = value.toUpperCase();
+    setCouponCode(normalized);
+    if (normalized.trim() !== (appliedCouponCode ?? '')) {
+      setPreview(null);
+      setAppliedCouponCode(null);
+      setCouponMessage(null);
     }
   };
 
@@ -127,7 +151,8 @@ export const CheckoutPage: React.FC = () => {
         {
           ...addressPayload(),
           paymentMethod,
-          couponCode: couponCode.trim() || undefined,
+          // Chỉ gửi mã giảm giá đã bấm "Áp dụng" thành công để tổng tiền hiển thị luôn khớp với tiền server trừ.
+          couponCode: appliedCouponCode ?? undefined,
           note: note.trim() || undefined,
           idempotencyKey,
         },
@@ -262,19 +287,16 @@ export const CheckoutPage: React.FC = () => {
 
           <section className="panel">
             <div className="step-title"><span>03</span><h3>Kiểm tra sản phẩm</h3></div>
-            {cart.items.map((item) => {
-              const info = products[item.sku];
-              return (
+            {cart.items.map((item) => (
                 <div className="order-line" key={item.cartItemId}>
-                  <ProductImage src={info?.thumbnailImage} alt={item.productName} hint={item.productName} />
+                  <ProductImage src={item.thumbnailImage} alt={item.productName} hint={item.productName} />
                   <div style={{ minWidth: 0 }}>
                     <strong>{item.productName}</strong>
                     <p className="small muted">{item.variantName} · SL {item.quantity} × {formatMoney(item.unitPrice)}</p>
                   </div>
                   <strong className="push">{formatMoney(item.lineTotal)}</strong>
                 </div>
-              );
-            })}
+            ))}
             <label className="field" style={{ marginTop: 16 }}>
               <span>Ghi chú giao hàng (tùy chọn)</span>
               <textarea maxLength={500} rows={2} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Ví dụ: Giao giờ hành chính" style={{ minHeight: 70 }} />
@@ -288,16 +310,19 @@ export const CheckoutPage: React.FC = () => {
             <div className="row" style={{ marginTop: 16 }}>
               <label className="field" style={{ flex: 1 }}>
                 <span className="sr-only">Mã giảm giá</span>
-                <input value={couponCode} onChange={(e) => setCouponCode(e.target.value.toUpperCase())} placeholder="Nhập mã giảm giá" />
+                <input value={couponCode} onChange={(e) => handleCouponInputChange(e.target.value)} placeholder="Nhập mã giảm giá" />
               </label>
               <button type="button" className="btn" disabled={previewLoading} onClick={() => void handlePreviewCoupon()}>
                 {previewLoading ? 'Đang kiểm tra' : 'Áp dụng'}
               </button>
             </div>
             {couponMessage && <p className="small" style={{ color: 'var(--green)', marginTop: 10 }}>{couponMessage}</p>}
+            {couponCode.trim() && !appliedCouponCode && (
+              <p className="small muted" style={{ marginTop: 8 }}>Bấm “Áp dụng” để kiểm tra và trừ mã giảm giá trước khi đặt hàng.</p>
+            )}
             <div className="summary-line"><span className="muted">Tạm tính</span><strong>{formatMoney(subtotal)}</strong></div>
             <div className="summary-line"><span className="muted">Giảm giá</span><strong style={{ color: 'var(--green)' }}>−{formatMoney(discountAmount)}</strong></div>
-            <div className="summary-line"><span className="muted">Vận chuyển</span><strong>{preview ? (shippingFee ? formatMoney(shippingFee) : 'Miễn phí') : 'Bấm “Áp dụng” để tính'}</strong></div>
+            <div className="summary-line"><span className="muted">Vận chuyển</span><strong>{shippingFee ? formatMoney(shippingFee) : 'Miễn phí'}</strong></div>
             <hr className="divider" />
             <div className="summary-line total"><span>Tổng cộng</span><strong>{formatMoney(totalAmount)}</strong></div>
             <p className="small muted">Đã bao gồm thuế VAT.</p>

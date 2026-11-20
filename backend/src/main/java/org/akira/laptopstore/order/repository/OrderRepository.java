@@ -12,6 +12,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.time.Instant;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -29,6 +30,19 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
     Page<Order> findByStatus(OrderStatus status, Pageable pageable);
 
     Page<Order> findByUserIdAndStatus(Long userId, OrderStatus status, Pageable pageable);
+
+    Page<Order> findByUserIdAndStatusIn(Long userId, Collection<OrderStatus> statuses, Pageable pageable);
+
+    @Query("""
+            select o from Order o
+            where (:status is null or o.status = :status)
+              and (:keywordPattern = ''
+                   or lower(o.orderCode) like :keywordPattern
+                   or lower(o.recipientName) like :keywordPattern)
+            """)
+    Page<Order> searchAllOrders(@Param("status") OrderStatus status,
+                                @Param("keywordPattern") String keywordPattern,
+                                Pageable pageable);
 
     Optional<Order> findByIdempotencyKeyAndUserId(String idempotencyKey, Long userId);
 

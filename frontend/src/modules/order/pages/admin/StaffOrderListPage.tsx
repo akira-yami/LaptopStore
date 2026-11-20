@@ -1,7 +1,7 @@
 import { apiErrorMessage, Badge, formatDateTime, formatMoney, Icon, Modal, ORDER_STATUS, OrderStatusBadge, PageHeading, Pager, Spinner, useToast } from '@/components/ui';
 import { paymentApi } from '@/modules/payment/api/paymentApi';
 import { PaymentResponse } from '@/modules/payment/types';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { orderApi } from '../../api/orderApi';
 import { OrderDetail, OrderStatus, OrderSummary } from '../../types';
 
@@ -51,8 +51,9 @@ export const StaffOrderListPage = () => {
   const [totalPages, setTotalPages] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [filter, setFilter] = useState('');
+  const [filter, setFilter] = useState<OrderStatus | ''>('');
   const [keyword, setKeyword] = useState('');
+  const [debouncedKeyword, setDebouncedKeyword] = useState('');
   const [detail, setDetail] = useState<OrderDetail | null>(null);
   const [pending, setPending] = useState<{ order: OrderSummary; to: OrderStatus } | null>(null);
   const [codTarget, setCodTarget] = useState<OrderSummary | null>(null);
@@ -60,11 +61,23 @@ export const StaffOrderListPage = () => {
   const [note, setNote] = useState('');
   const [saving, setSaving] = useState(false);
 
-  const load = useCallback(async (p: number) => {
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setDebouncedKeyword(keyword.trim());
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [keyword]);
+
+  const load = useCallback(async (p: number, statusFilter: OrderStatus | '', searchKeyword: string) => {
     try {
       setLoading(true);
       setError(null);
-      const res = await orderApi.getAllForStaff({ page: p, size: PAGE_SIZE });
+      const res = await orderApi.getAllForStaff({
+        page: p,
+        size: PAGE_SIZE,
+        status: statusFilter || undefined,
+        keyword: searchKeyword || undefined,
+      });
       setOrders(res.content);
       setTotalPages(res.totalPages);
       const ids = res.content.map((o) => o.id);
@@ -81,13 +94,19 @@ export const StaffOrderListPage = () => {
     }
   }, []);
 
-  useEffect(() => { void load(page); }, [load, page]);
+  useEffect(() => {
+    void load(page, filter, debouncedKeyword);
+  }, [load, page, filter, debouncedKeyword]);
 
-  const visible = useMemo(() => {
-    const q = keyword.trim().toLowerCase();
-    return orders.filter((o) => (!filter || o.status === filter || (filter === 'PACKING' && o.status === 'PACKED'))
-      && (!q || o.orderCode.toLowerCase().includes(q) || o.recipientName.toLowerCase().includes(q)));
-  }, [orders, filter, keyword]);
+  const selectFilter = (next: OrderStatus | '') => {
+    setFilter(next);
+    setPage(0);
+  };
+
+  const handleKeywordChange = (value: string) => {
+    setKeyword(value);
+    setPage(0);
+  };
 
   const openDetail = async (orderId: number) => {
     try {
@@ -105,7 +124,7 @@ export const StaffOrderListPage = () => {
       toast(`Đơn #${pending.order.orderCode}: ${ORDER_STATUS[pending.to]?.label ?? pending.to}.`);
       setPending(null);
       setNote('');
-      await load(page);
+      await load(page, filter, debouncedKeyword);
     } catch (err) {
       toast(apiErrorMessage(err, 'Không thể cập nhật trạng thái đơn.'), { tone: 'error' });
     } finally {
@@ -120,7 +139,7 @@ export const StaffOrderListPage = () => {
       await paymentApi.recordCodPayment({ orderId: codTarget.id });
       toast(`Đã xác nhận thu tiền COD cho đơn #${codTarget.orderCode}.`);
       setCodTarget(null);
-      await load(page);
+      await load(page, filter, debouncedKeyword);
     } catch (err) {
       toast(apiErrorMessage(err, 'Không thể xác nhận thu tiền COD (có thể đã thu hoặc đơn không phải COD).'), { tone: 'error' });
     } finally {
@@ -134,17 +153,17 @@ export const StaffOrderListPage = () => {
         eyebrow="Vận hành / Đơn hàng"
         title="Đơn hàng cần xử lý"
         sub="Xác nhận, đóng gói và giao hàng theo đúng quy trình."
-        actions={<button type="button" className="btn sm" onClick={() => void load(page)}><Icon name="refresh" /> Làm mới</button>}
+        actions={<button type="button" className="btn sm" onClick={() => void load(page, filter, debouncedKeyword)}><Icon name="refresh" /> Làm mới</button>}
       />
 
       <div className="ops-toolbar">
         <label className="search">
           <Icon name="search" />
-          <input value={keyword} onChange={(e) => setKeyword(e.target.value)} placeholder="Tìm mã đơn hoặc tên khách..." aria-label="Tìm đơn hàng" />
+          <input value={keyword} onChange={(e) => handleKeywordChange(e.target.value)} placeholder="Tìm mã đơn hoặc tên khách..." aria-label="Tìm đơn hàng" />
         </label>
         <div className="chips" style={{ margin: 0 }}>
           {FILTERS.map((f) => (
-            <button key={f.value} type="button" className={`chip ${filter === f.value ? 'active' : ''}`} onClick={() => setFilter(f.value)}>{f.label}</button>
+            <button key={f.value} type="button" className={`chip ${filter === f.value ? 'active' : ''}`} onClick={() => selectFilter(f.value as OrderStatus | '')}>{f.label}</button>
           ))}
         </div>
       </div>
@@ -156,9 +175,9 @@ export const StaffOrderListPage = () => {
             <tbody>
               {error ? (
                 <tr><td colSpan={7} className="table-empty">{error}</td></tr>
-              ) : visible.length === 0 ? (
+              ) : orders.length === 0 ? (
                 <tr><td colSpan={7} className="table-empty">Không có đơn hàng phù hợp. Thử đổi bộ lọc.</td></tr>
-              ) : visible.map((o) => {
+              ) : orders.map((o) => {
                 const payment = paymentsByOrderId[o.id];
                 const paymentBadge = formatPaymentBadge(payment);
                 const canRecordCod = o.status === 'DELIVERED'

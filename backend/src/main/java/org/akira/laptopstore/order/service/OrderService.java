@@ -7,10 +7,12 @@ import org.akira.laptopstore.order.dto.response.CheckoutPreviewResponse;
 import org.akira.laptopstore.order.dto.response.OrderDashboardSummaryResponse;
 import org.akira.laptopstore.order.dto.response.OrderResponse;
 import org.akira.laptopstore.order.dto.response.OrderSummaryResponse;
+import org.akira.laptopstore.order.entity.enums.OrderStatus;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 
 import java.time.Duration;
+import java.util.List;
 
 public interface OrderService {
 
@@ -24,7 +26,11 @@ public interface OrderService {
 
     Page<OrderSummaryResponse> getOwnOrders(Long userId, Pageable pageable);
 
+    Page<OrderSummaryResponse> getOwnOrders(Long userId, List<OrderStatus> statuses, Pageable pageable);
+
     Page<OrderSummaryResponse> getAllOrders(Pageable pageable);
+
+    Page<OrderSummaryResponse> getAllOrders(OrderStatus status, String keyword, Pageable pageable);
 
     OrderDashboardSummaryResponse getDashboardSummary();
 

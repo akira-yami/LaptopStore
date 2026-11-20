@@ -361,14 +361,36 @@ public class OrderServiceImpl implements OrderService {
     @Override
     @Transactional(readOnly = true)
     public Page<OrderSummaryResponse> getOwnOrders(Long userId, Pageable pageable) {
+        return getOwnOrders(userId, null, pageable);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Page<OrderSummaryResponse> getOwnOrders(Long userId, List<OrderStatus> statuses, Pageable pageable) {
         requireUserId(userId);
-        return toSummaryPage(orderRepository.findByUserId(userId, pageable));
+        if (statuses == null || statuses.isEmpty()) {
+            return toSummaryPage(orderRepository.findByUserId(userId, pageable));
+        }
+        return toSummaryPage(orderRepository.findByUserIdAndStatusIn(userId, statuses, pageable));
     }
 
     @Override
     @Transactional(readOnly = true)
     public Page<OrderSummaryResponse> getAllOrders(Pageable pageable) {
-        return toSummaryPage(orderRepository.findAll(pageable));
+        return getAllOrders(null, null, pageable);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Page<OrderSummaryResponse> getAllOrders(OrderStatus status, String keyword, Pageable pageable) {
+        String normalizedKeyword = checkoutSupport.normalize(keyword);
+        if (status == null && normalizedKeyword == null) {
+            return toSummaryPage(orderRepository.findAll(pageable));
+        }
+        String keywordPattern = normalizedKeyword == null
+                ? ""
+                : "%" + normalizedKeyword.toLowerCase(Locale.ROOT) + "%";
+        return toSummaryPage(orderRepository.searchAllOrders(status, keywordPattern, pageable));
     }
 
     @Override

@@ -150,6 +150,28 @@ class OrderControllerTest {
     }
 
     @Test
+    void orderListEndpointsForwardServerSideFilterParams() throws Exception {
+        when(orderService.getAllOrders(eq(OrderStatus.DELIVERED), eq("ORD-88"), any()))
+                .thenReturn(new PageImpl<>(List.of()));
+        when(orderService.getOwnOrders(eq(42L), eq(List.of(OrderStatus.PENDING_PAYMENT, OrderStatus.WAITING_CONFIRMATION)), any()))
+                .thenReturn(new PageImpl<>(List.of()));
+
+        mockMvc.perform(get("/api/v1/staff/orders")
+                        .param("status", "DELIVERED")
+                        .param("keyword", "ORD-88")
+                        .with(user(principal(84L, "ROLE_STAFF"))))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/v1/me/orders")
+                        .param("status", "PENDING_PAYMENT", "WAITING_CONFIRMATION")
+                        .with(user(principal(42L, "ROLE_USER"))))
+                .andExpect(status().isOk());
+
+        verify(orderService).getAllOrders(eq(OrderStatus.DELIVERED), eq("ORD-88"), any());
+        verify(orderService).getOwnOrders(eq(42L), eq(List.of(OrderStatus.PENDING_PAYMENT, OrderStatus.WAITING_CONFIRMATION)), any());
+    }
+
+    @Test
     void myOrderEndpointsRequireAuthentication() throws Exception {
         mockMvc.perform(get("/api/v1/me/orders"))
                 .andExpect(status().isUnauthorized());

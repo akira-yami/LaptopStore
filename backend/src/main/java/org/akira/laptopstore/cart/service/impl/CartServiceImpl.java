@@ -122,9 +122,11 @@ public class CartServiceImpl implements CartService {
     public void clearCart(Long userId) {
         requireUserId(userId);
 
-       Cart cart = lockedCart(userId);
-       cart.getItems().clear();
-       cart.setUpdatedAt(Instant.now());
+        // Idempotent: nếu user chưa từng có giỏ hàng trong DB thì bỏ qua êm thay vì ném 404.
+        cartRepository.findByUserIdForUpdate(userId).ifPresent(cart -> {
+            cart.getItems().clear();
+            cart.setUpdatedAt(Instant.now());
+        });
     }
 
 

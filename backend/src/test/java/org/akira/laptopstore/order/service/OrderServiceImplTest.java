@@ -770,6 +770,28 @@ class OrderServiceImplTest {
         verify(eventPublisher).publishEvent(new OrderCancelledEvent(202L, true));
     }
 
+    @Test
+    void orderServiceSupportsServerSideStatusAndKeywordFiltering() {
+        Order match = order(88L, 42L);
+        match.setStatus(OrderStatus.DELIVERED);
+        when(orders.searchAllOrders(eq(OrderStatus.DELIVERED), eq("%ord-88%"), any()))
+                .thenReturn(new PageImpl<>(List.of(match)));
+        when(orderItems.sumQuantitiesByOrderIds(List.of(88L)))
+                .thenReturn(List.<Object[]>of(new Object[]{88L, 2L}));
+
+        var staffPage = service.getAllOrders(OrderStatus.DELIVERED, "  ORD-88 ", PageRequest.of(0, 20));
+        assertEquals(1, staffPage.getTotalElements());
+        assertEquals("ORD-88", staffPage.getContent().getFirst().getOrderCode());
+        verify(orders).searchAllOrders(eq(OrderStatus.DELIVERED), eq("%ord-88%"), any());
+
+        List<OrderStatus> pendingGroup = List.of(OrderStatus.PENDING_PAYMENT, OrderStatus.WAITING_CONFIRMATION);
+        when(orders.findByUserIdAndStatusIn(eq(42L), eq(pendingGroup), any()))
+                .thenReturn(new PageImpl<>(List.of(match)));
+        var ownPage = service.getOwnOrders(42L, pendingGroup, PageRequest.of(0, 20));
+        assertEquals(1, ownPage.getTotalElements());
+        verify(orders).findByUserIdAndStatusIn(eq(42L), eq(pendingGroup), any());
+    }
+
     private Order order(Long id, Long userId) {
         return Order.builder().id(id).userId(userId).orderCode("ORD-" + id).status(OrderStatus.CONFIRMED)
                 .subtotal(new BigDecimal("25000000")).discountAmount(BigDecimal.ZERO).shippingFee(BigDecimal.ZERO)
