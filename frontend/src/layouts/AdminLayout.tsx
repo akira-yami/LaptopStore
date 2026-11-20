@@ -26,6 +26,7 @@ const adminNavigation: { label: string; links: { to: string; label: string; icon
     label: 'Kiểm soát vận hành',
     links: [
       { to: '/admin/orders', label: 'Đơn hàng', icon: 'orders' },
+      { to: '/admin/refund-requests', label: 'Hoàn tiền', icon: 'wallet' },
       { to: '/admin/inventory', label: 'Kho hàng', icon: 'box' },
       { to: '/admin/procurement', label: 'Phiếu nhập', icon: 'truck' },
       { to: '/admin/suppliers', label: 'Nhà cung cấp', icon: 'users' },

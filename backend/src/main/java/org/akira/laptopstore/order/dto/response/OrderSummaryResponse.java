@@ -19,4 +19,5 @@ public class OrderSummaryResponse {
     private BigDecimal totalAmount;
     private String recipientName;
     private Instant createdAt;
+    private String cancellationRequestReason;
 }

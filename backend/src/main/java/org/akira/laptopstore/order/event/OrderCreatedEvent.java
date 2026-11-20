@@ -7,7 +7,7 @@ import java.time.Instant;
 
 /**
  * Sự kiện nội bộ phát ra trong cùng transaction khi đơn hàng vừa được tạo thành công.
- * Module payment lắng nghe để khởi tạo bản ghi Payment đồng bộ, tránh đơn COD/VNPay mồ côi payment.
+ * Module payment lắng nghe để ghi bản thanh toán và xử lý StoreCredit trong cùng transaction.
  */
 public record OrderCreatedEvent(
         Long orderId,

@@ -17,7 +17,7 @@ public class OrderStateMachine {
             OrderStatus.PENDING_PAYMENT, Set.of(OrderStatus.CONFIRMED, OrderStatus.CANCELLED),
             OrderStatus.WAITING_CONFIRMATION, Set.of(OrderStatus.CONFIRMED, OrderStatus.CANCELLED),
             OrderStatus.CONFIRMED, Set.of(OrderStatus.PACKING, OrderStatus.CANCELLED),
-            OrderStatus.PACKING, Set.of(OrderStatus.SHIPPING),
+            OrderStatus.PACKING, Set.of(OrderStatus.SHIPPING, OrderStatus.CANCELLED),
             OrderStatus.SHIPPING, Set.of(OrderStatus.DELIVERED, OrderStatus.DELIVERY_FAILED),
             OrderStatus.DELIVERY_FAILED, Set.of(OrderStatus.SHIPPING, OrderStatus.CANCELLED),
             OrderStatus.DELIVERED, Set.of(OrderStatus.RETURNED),
@@ -51,10 +51,10 @@ public class OrderStateMachine {
 
         // Kiểm tra quyền của khách hàng (USER thông thường)
         if (!isStaff) {
-            // Khách chỉ được hủy đơn khi đơn ở PENDING_PAYMENT hoặc WAITING_CONFIRMATION
+            // Khách chỉ được hủy trực tiếp đơn đang chờ thanh toán online.
             if (toStatus == OrderStatus.CANCELLED) {
-                if (fromStatus != OrderStatus.PENDING_PAYMENT && fromStatus != OrderStatus.WAITING_CONFIRMATION) {
-                    throw new ValidationException("Khách hàng chỉ có thể hủy đơn khi chưa đóng gói/giao hàng");
+                if (fromStatus != OrderStatus.PENDING_PAYMENT) {
+                    throw new ValidationException("Khách hàng chỉ có thể hủy trực tiếp đơn đang chờ thanh toán online");
                 }
             } else {
                 throw new ValidationException("Khách hàng không có quyền chuyển sang trạng thái: " + toStatus);

@@ -27,6 +27,7 @@ import static org.mockito.Mockito.*;
 class OrderLifecyclePaymentListenerTest {
 
     @Mock private PaymentRepository paymentRepository;
+    @Mock private StoreCreditService storeCreditService;
     @InjectMocks private OrderLifecyclePaymentListener listener;
 
     @Test

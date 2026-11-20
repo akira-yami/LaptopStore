@@ -2,13 +2,13 @@ package org.akira.laptopstore.payment.service.Impl;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.akira.laptopstore.order.entity.enums.CheckoutPaymentMethod;
 import org.akira.laptopstore.order.event.OrderCancelledEvent;
 import org.akira.laptopstore.order.event.OrderCreatedEvent;
 import org.akira.laptopstore.payment.entity.Payment;
 import org.akira.laptopstore.payment.enums.PaymentMethod;
 import org.akira.laptopstore.payment.enums.PaymentStatus;
 import org.akira.laptopstore.payment.repository.PaymentRepository;
+import org.akira.laptopstore.payment.service.StoreCreditService;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 
@@ -27,10 +27,10 @@ public class OrderLifecyclePaymentListener {
     private static final Duration ONLINE_PAYMENT_DEADLINE = Duration.ofMinutes(15);
 
     private final PaymentRepository paymentRepository;
+    private final StoreCreditService storeCreditService;
 
     /**
-     * Khởi tạo ngay bản ghi Payment (PENDING) khi đơn hàng được tạo,
-     * đảm bảo đơn COD và VNPAY không bao giờ rơi vào trạng thái mồ côi Payment nếu client rớt mạng.
+     * Khởi tạo bản ghi Payment khi tạo đơn và trừ số dư nếu đơn thanh toán bằng StoreCredit.
      */
     @EventListener
     public void onOrderCreated(OrderCreatedEvent event) {
@@ -41,9 +41,16 @@ public class OrderLifecyclePaymentListener {
             return;
         }
 
-        PaymentMethod method = event.paymentMethod() == CheckoutPaymentMethod.VNPAY
-                ? PaymentMethod.VNPAY
-                : PaymentMethod.COD;
+        PaymentMethod method = switch (event.paymentMethod()) {
+            case COD -> PaymentMethod.COD;
+            case VNPAY -> PaymentMethod.VNPAY;
+            case STORE_CREDIT -> PaymentMethod.STORE_CREDIT;
+        };
+        PaymentStatus status = PaymentStatus.PENDING;
+        if (method == PaymentMethod.STORE_CREDIT) {
+            storeCreditService.payForOrder(event.userId(), event.orderId(), event.totalAmount());
+            status = PaymentStatus.PAID;
+        }
         Instant createdAt = event.createdAt() != null ? event.createdAt() : Instant.now();
         Instant expiresAt = method == PaymentMethod.VNPAY
                 ? createdAt.plus(ONLINE_PAYMENT_DEADLINE)
@@ -53,7 +60,7 @@ public class OrderLifecyclePaymentListener {
                 .orderId(event.orderId())
                 .method(method)
                 .amount(event.totalAmount())
-                .status(PaymentStatus.PENDING)
+                .status(status)
                 .expiresAt(expiresAt)
                 .build();
         paymentRepository.save(payment);

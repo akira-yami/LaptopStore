@@ -14,7 +14,8 @@ import {
 } from '@/components/ui';
 import { useSkuProducts } from '@/modules/cart/hooks/useSkuProducts';
 import { paymentApi } from '@/modules/payment/api/paymentApi';
-import { PaymentResponse } from '@/modules/payment/types';
+import { OrderRefundSection } from '@/modules/payment/pages/user/OrderRefundSection';
+import { PAYMENT_METHOD_LABEL, PaymentResponse } from '@/modules/payment/types';
 import { AccountLayout } from '@/modules/user/components/AccountLayout';
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
@@ -22,6 +23,7 @@ import { orderApi } from '../../api/orderApi';
 import { OrderDetail } from '../../types';
 
 const STAGES = ['WAITING_CONFIRMATION', 'CONFIRMED', 'PACKING', 'SHIPPING', 'DELIVERED'];
+const COD_CANCELLATION_STATUSES = ['WAITING_CONFIRMATION', 'CONFIRMED', 'PACKING'];
 const stageOf = (status: string) => {
   if (['CREATED', 'PENDING_PAYMENT'].includes(status)) return 0;
   return STAGES.indexOf(status);
@@ -93,14 +95,15 @@ export const OrderDetailPage = () => {
       setCancelling(true);
       const updated = await orderApi.cancelOrder(order.id, cancelReason.trim() || undefined);
       setOrder(updated);
-      try {
-        setPayment(await paymentApi.getByOrder(updated.id));
-      } catch {
-        // Giữ nguyên trạng thái payment hiện tại nếu không tìm thấy bản ghi payment
-      }
       setCancelModalOpen(false);
       setCancelReason('');
-      toast(`Đã hủy đơn hàng #${order.orderCode}.`);
+      if (updated.cancellationRequestReason) {
+        toast(`Đã gửi yêu cầu hủy đơn hàng #${order.orderCode}.`);
+      } else {
+        const refreshedPayment = await paymentApi.getByOrder(updated.id).catch(() => null);
+        if (refreshedPayment) setPayment(refreshedPayment);
+        toast(`Đã hủy đơn hàng #${order.orderCode}.`);
+      }
     } catch (err) {
       toast(apiErrorMessage(err, 'Không thể hủy đơn hàng ở trạng thái hiện tại.'), { tone: 'error' });
     } finally {
@@ -119,7 +122,9 @@ export const OrderDetailPage = () => {
 
   const current = stageOf(order.status);
   const interrupted = current < 0;
-  const canCancel = order.status === 'WAITING_CONFIRMATION' || order.status === 'PENDING_PAYMENT';
+  const canRequestCodCancellation = order.paymentMethod === 'COD' && COD_CANCELLATION_STATUSES.includes(order.status);
+  const canCancelOnline = order.paymentMethod !== 'COD' && order.status === 'PENDING_PAYMENT';
+  const canCancel = !order.cancellationRequestReason && (canRequestCodCancellation || canCancelOnline);
   const canPayVnpay = order.status === 'PENDING_PAYMENT';
   const canReview = order.status === 'DELIVERED';
   const paymentBadge = payment ? PAYMENT_STATUS_LABEL[payment.status] : null;
@@ -141,8 +146,8 @@ export const OrderDetailPage = () => {
             </button>
           )}
           {canCancel && (
-            <button type="button" className="btn danger sm" onClick={() => setCancelModalOpen(true)}>
-              Hủy đơn hàng
+            <button type="button" className="btn danger sm" disabled={cancelling} onClick={() => setCancelModalOpen(true)}>
+              {canRequestCodCancellation ? 'Yêu cầu hủy đơn hàng' : 'Hủy đơn hàng'}
             </button>
           )}
           <Link to="/orders" className="btn sm"><Icon name="arrow-left" /> Tất cả đơn hàng</Link>
@@ -150,6 +155,15 @@ export const OrderDetailPage = () => {
       )}
     >
       <div className="stack">
+        {order.cancellationRequestReason && (
+          <div className="notice" role="status">
+            <Icon name="clock" />
+            <div>
+              <strong>Yêu cầu hủy đơn hàng đang chờ duyệt</strong>
+              <p className="small muted">{order.cancellationRequestReason}</p>
+            </div>
+          </div>
+        )}
         {canPayVnpay && (
           <div className="notice" role="status">
             <Icon name="clock" />
@@ -242,7 +256,7 @@ export const OrderDetailPage = () => {
             )}
             {payment && (
               <div className="row between wrap" style={{ marginTop: 12 }}>
-                <span className="small muted">Thanh toán ({payment.method})</span>
+                <span className="small muted">Thanh toán ({PAYMENT_METHOD_LABEL[payment.method]})</span>
                 {paymentBadge && <Badge tone={paymentBadge.tone}>{paymentBadge.label}</Badge>}
               </div>
             )}
@@ -253,23 +267,28 @@ export const OrderDetailPage = () => {
             <div className="summary-line total"><span>Tổng cộng</span><strong>{formatMoney(order.totalAmount)}</strong></div>
           </section>
         </div>
+        {payment?.status === 'PAID' && payment.orderId === order.id && <OrderRefundSection key={order.id} orderId={order.id} />}
       </div>
 
       <Modal
         open={cancelModalOpen}
-        title={`Hủy đơn hàng #${order.orderCode}?`}
+        title={`${canRequestCodCancellation ? 'Yêu cầu hủy đơn hàng' : 'Hủy đơn hàng'} #${order.orderCode}?`}
         onClose={() => setCancelModalOpen(false)}
         actions={(
           <>
             <button type="button" className="btn" onClick={() => setCancelModalOpen(false)}>Đóng</button>
             <button type="button" className="btn danger" disabled={cancelling} onClick={() => void handleCancelOrder()}>
-              {cancelling ? 'Đang hủy...' : 'Xác nhận hủy đơn'}
+              {canRequestCodCancellation
+                ? (cancelling ? 'Đang gửi...' : 'Gửi yêu cầu hủy')
+                : (cancelling ? 'Đang hủy...' : 'Xác nhận hủy đơn')}
             </button>
           </>
         )}
       >
         <p className="muted" style={{ marginBottom: 14 }}>
-          Tồn kho và mã giảm giá (nếu có) sẽ được hoàn lại sau khi hủy đơn thành công.
+          {canRequestCodCancellation
+            ? 'Đơn hàng sẽ được hủy sau khi nhân viên duyệt yêu cầu.'
+            : 'Tồn kho và mã giảm giá (nếu có) sẽ được hoàn lại sau khi hủy đơn thành công.'}
         </p>
         <label className="field">
           <span>Lý do hủy (tùy chọn)</span>

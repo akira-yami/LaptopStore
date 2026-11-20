@@ -52,6 +52,7 @@ Tên dưới đây là thiết kế để owner triển khai, chưa có Java cla
 | promotion | `reserveForOrder(...)`, `releaseForOrder(...)` | coupon, userId, orderId, subtotal → CouponEvaluation | Khóa và ghi usage; không tự query order |
 | order | `getPayableOrder(actorId, orderId)` | ID → OrderPaymentSnapshot | Ownership, total và trạng thái order; payment tự quản lý method/status |
 | order | `recordVerifiedPayment(result)` | kết quả nội bộ từ payment → outcome | Khóa order, kiểm tra trạng thái; trạng thái thanh toán vẫn nằm ở `payments` |
+| order | `OrderRefundService.confirmRefund(orderId, adminId, refundRequestId, returnOrder)` | Yêu cầu đang chờ được ADMIN duyệt → ID chủ đơn | Khóa đơn và kiểm tra điều kiện trả hàng trong transaction duyệt của payment. Trả hàng hợp lệ chuyển đơn sang `RETURNED` và nhập lại kho. |
 | order | `getDeliveredItem(userId, orderItemId)` | ID → PurchasedItemView | Chỉ đúng chủ đơn và DELIVERED |
 
 Lỗi chéo dùng exception cơ sở/mã lỗi đã công bố, ví dụ `INSUFFICIENT_STOCK`, `INVALID_ORDER_STATE`, `COUPON_NOT_APPLICABLE`. Caller không bắt mọi Exception rồi trả thành công. Chốt chính xác signature và contract lỗi trong PR trước khi cả hai owner code.

@@ -21,7 +21,7 @@ Bản ghi thanh toán COD, thanh toán online mô phỏng và tích hợp VNPay 
 
 ## Dữ liệu và phụ thuộc
 
-**Dữ liệu sở hữu:** payments, payment_transactions.
+**Dữ liệu sở hữu:** payments, payment_transactions, refund_requests, refund_request_evidence, store_credit_wallets, store_credit_entries.
 
 **Được gọi:** order.service qua OrderQueryService/OrderPaymentService. Không đọc OrderRepository hoặc ghi entity Order trực tiếp. Không gọi repository/entity module khác. Xem [allowlist và contract](../../../../../../../docs/architecture/04-dependencies.md).
 
@@ -38,6 +38,19 @@ Bản ghi thanh toán COD, thanh toán online mô phỏng và tích hợp VNPay 
 ## Luồng triển khai điển hình
 
 Kiểm tra order/ownership → lập payment → tạo session ngoài khóa DB → nhận callback → khóa payment/order → ghi payment transaction, cập nhật `payments.status` và phối hợp trạng thái order.
+
+## Yêu cầu hoàn tiền
+
+- Chủ đơn có thanh toán `PAID` được gửi lý do và đính kèm ảnh minh chứng. Số tiền yêu cầu lấy từ bản ghi thanh toán. Flyway V12 lưu yêu cầu và ảnh trong PostgreSQL.
+- `ADMIN` duyệt hoặc từ chối kèm lý do. Khi duyệt, hệ thống lưu quyết định và cộng tiền vào StoreCredit trong cùng transaction. Yêu cầu được duyệt theo quy trình cũ giữ nguyên lịch sử.
+- Với đơn đã giao, ADMIN xác nhận trả hàng sau khi nhận lại hàng. Service của order cập nhật `RETURNED` và nhập lại kho trong transaction duyệt.
+- Khách có thể gửi yêu cầu mới sau khi bị từ chối. Mỗi đơn chỉ có một yêu cầu đang chờ hoặc đã duyệt. Ảnh minh chứng cần quyền chủ đơn hoặc `ADMIN`.
+
+## StoreCredit
+
+- `GET /api/v1/me/store-credit` trả số dư và 20 giao dịch gần đây của chủ ví.
+- Chọn `STORE_CREDIT` để thanh toán toàn bộ đơn mới. Listener của `OrderCreatedEvent` trừ số dư và tạo payment `PAID` trong transaction checkout.
+- Flyway V13 tạo ví và sổ giao dịch. Mỗi yêu cầu hoàn tiền có tối đa một giao dịch cộng tiền, mỗi đơn có tối đa một giao dịch trừ tiền. Cập nhật số dư và ghi giao dịch thực hiện cùng nhau.
 
 ## Bàn giao và kiểm tra
 

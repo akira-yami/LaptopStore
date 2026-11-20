@@ -6,7 +6,8 @@ import java.util.Locale;
 
 public enum CheckoutPaymentMethod {
     COD,
-    VNPAY;
+    VNPAY,
+    STORE_CREDIT;
 
     public static CheckoutPaymentMethod fromValue(String rawValue) {
         if (rawValue == null || rawValue.isBlank()) {
@@ -16,6 +17,7 @@ public enum CheckoutPaymentMethod {
         return switch (normalized) {
             case "COD" -> COD;
             case "VNPAY", "ONLINE" -> VNPAY;
+            case "STORE_CREDIT" -> STORE_CREDIT;
             default -> throw new ValidationException("Unsupported payment method: " + rawValue.trim());
         };
     }

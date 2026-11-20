@@ -1,6 +1,7 @@
 import { ToastProvider } from '@/components/ui';
 import { cartApi } from '@/modules/cart/api/cartApi';
 import { paymentApi } from '@/modules/payment/api/paymentApi';
+import { storeCreditApi } from '@/modules/payment/api/storeCreditApi';
 import { userApi } from '@/modules/user/api/userApi';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -54,8 +55,13 @@ vi.mock('@/modules/payment/api/paymentApi', () => ({
   },
 }));
 
+vi.mock('@/modules/payment/api/storeCreditApi', () => ({
+  storeCreditApi: { getWallet: vi.fn() },
+}));
+
 describe('CheckoutPage', () => {
   beforeEach(() => {
+    vi.mocked(storeCreditApi.getWallet).mockResolvedValue({ balance: 0, entries: [] });
     vi.mocked(cartApi.get).mockResolvedValue({
       id: 1,
       totalItems: 1,
@@ -87,6 +93,37 @@ describe('CheckoutPage', () => {
         createdAt: '2026-10-01T00:00:00Z',
       },
     ]);
+  });
+
+  it('thanh toán trực tiếp bằng StoreCredit khi số dư đủ', async () => {
+    const user = userEvent.setup();
+    vi.mocked(storeCreditApi.getWallet).mockResolvedValue({ balance: 20000000, entries: [] });
+    vi.mocked(paymentApi.startPayment).mockClear();
+    vi.mocked(orderApi.createOrder).mockResolvedValue({
+      id: 126, userId: 42, orderCode: 'ORD-126', status: 'CONFIRMED', paymentMethod: 'STORE_CREDIT',
+      totalItems: 1, subtotal: 20000000, discountAmount: 0, shippingFee: 0, totalAmount: 20000000,
+      recipientName: 'Phan Anh Khang', recipientPhone: '0901234567', shippingAddress: '123 Nguyen Trai',
+      couponCodeSnapshot: null, items: [], statusHistories: [],
+      createdAt: '2026-10-15T10:00:00Z', updatedAt: '2026-10-15T10:00:00Z',
+    });
+    render(<ToastProvider><MemoryRouter><CheckoutPage /></MemoryRouter></ToastProvider>);
+
+    await user.click(await screen.findByRole('radio', { name: /StoreCredit/ }));
+    await user.click(screen.getByRole('button', { name: /Đặt hàng/i }));
+
+    await waitFor(() => expect(navigateMock).toHaveBeenCalledWith('/orders/126'));
+    expect(orderApi.createOrder).toHaveBeenCalledWith(
+      expect.objectContaining({ paymentMethod: 'STORE_CREDIT' }), expect.any(String),
+    );
+    expect(paymentApi.startPayment).not.toHaveBeenCalled();
+  });
+
+  it('hiển thị số dư thiếu và vô hiệu hóa lựa chọn StoreCredit', async () => {
+    vi.mocked(storeCreditApi.getWallet).mockResolvedValue({ balance: 15000000, entries: [] });
+    render(<ToastProvider><MemoryRouter><CheckoutPage /></MemoryRouter></ToastProvider>);
+
+    expect(await screen.findByText(/Chưa đủ để thanh toán/)).toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: /StoreCredit/ })).toBeDisabled();
   });
 
   it('khởi tạo payment COD và điều hướng sang chi tiết đơn khi đặt hàng COD', async () => {

@@ -3,6 +3,8 @@ package org.akira.laptopstore.order.integration;
 import org.akira.laptopstore.cart.dto.request.AddCartItemRequest;
 import org.akira.laptopstore.cart.service.CartService;
 import org.akira.laptopstore.exception.BusinessException;
+import org.akira.laptopstore.exception.ResourceNotFoundException;
+import org.akira.laptopstore.exception.ValidationException;
 import org.akira.laptopstore.order.dto.request.CheckoutPreviewRequest;
 import org.akira.laptopstore.order.dto.request.CreateOrderRequest;
 import org.akira.laptopstore.order.dto.request.UpdateOrderStatusRequest;
@@ -14,11 +16,15 @@ import org.akira.laptopstore.payment.dto.request.StartPaymentRequest;
 import org.akira.laptopstore.payment.enums.PaymentMethod;
 import org.akira.laptopstore.payment.enums.PaymentStatus;
 import org.akira.laptopstore.payment.service.PaymentService;
+import org.akira.laptopstore.payment.service.RefundRequestService;
+import org.akira.laptopstore.payment.service.StoreCreditService;
 import org.akira.laptopstore.promotion.dto.request.RedeemLoyaltyCouponRequest;
 import org.akira.laptopstore.promotion.service.LoyaltyService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -32,6 +38,7 @@ import java.sql.Timestamp;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.List;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -63,6 +70,8 @@ class OrderLifecycleE2ETest {
     @Autowired private OrderService orderService;
     @Autowired private OrderPaymentService orderPaymentService;
     @Autowired private PaymentService paymentService;
+    @Autowired private RefundRequestService refundRequestService;
+    @Autowired private StoreCreditService storeCreditService;
     @Autowired private LoyaltyService loyaltyService;
     @Autowired private JdbcTemplate jdbc;
 
@@ -166,6 +175,7 @@ class OrderLifecycleE2ETest {
         orderService.updateOrderStatus(staffId, created.getId(), new UpdateOrderStatusRequest(OrderStatus.CONFIRMED, null));
         orderService.updateOrderStatus(staffId, created.getId(), new UpdateOrderStatusRequest(OrderStatus.PACKING, null));
         orderService.updateOrderStatus(staffId, created.getId(), new UpdateOrderStatusRequest(OrderStatus.SHIPPING, null));
+        assertThrows(ValidationException.class, () -> orderService.cancelOrder(userId, created.getId(), null));
         var delivered = orderService.updateOrderStatus(staffId, created.getId(), new UpdateOrderStatusRequest(OrderStatus.DELIVERED, null));
         assertEquals(OrderStatus.DELIVERED, delivered.getStatus());
 
@@ -175,27 +185,54 @@ class OrderLifecycleE2ETest {
         assertEquals(PaymentStatus.PAID, paidPayment.getStatus());
     }
 
-    @Test
-    void cancelOrderRestoresStockAndReleasesCouponIdempotentlyE2E() {
+    @ParameterizedTest
+    @EnumSource(value = OrderStatus.class, names = {"WAITING_CONFIRMATION", "CONFIRMED", "PACKING"})
+    void codCancellationWaitsForApprovalAndRestoresStockAndCouponOnce(OrderStatus status) {
         cartService.addItemToCart(userId, new AddCartItemRequest(variantId, 3));
         var created = orderService.createOrder(userId, CreateOrderRequest.builder()
                 .addressId(addressId)
                 .paymentMethod("COD")
                 .couponCode(couponCode)
                 .build());
+        if (status == OrderStatus.CONFIRMED || status == OrderStatus.PACKING) {
+            orderService.updateOrderStatus(staffId, created.getId(), new UpdateOrderStatusRequest(OrderStatus.CONFIRMED, null));
+        }
+        var approval = new UpdateOrderStatusRequest(OrderStatus.CANCELLED, null);
+        if (status == OrderStatus.PACKING) {
+            orderService.updateOrderStatus(staffId, created.getId(), new UpdateOrderStatusRequest(OrderStatus.PACKING, null));
+            assertThrows(ValidationException.class, () -> orderService.updateOrderStatus(staffId, created.getId(), approval));
+        }
 
+        assertThrows(ResourceNotFoundException.class, () -> orderService.cancelOrder(staffId, created.getId(), null));
+        var requested = orderService.cancelOrder(userId, created.getId(), "Đổi cấu hình khác");
+        assertEquals(status, requested.getStatus());
+        assertEquals("Đổi cấu hình khác", requested.getCancellationRequestReason());
+        assertEquals("Đổi cấu hình khác", orderService.cancelOrder(userId, created.getId(), "Gửi lại").getCancellationRequestReason());
         assertEquals(7, currentStock(variantId));
         assertEquals("ACTIVE", couponUsageStatus(created.getId()));
+        assertEquals("PENDING", paymentStatus(created.getId()));
 
-        var cancelled = orderService.cancelOrder(userId, created.getId(), "Đổi cấu hình khác");
+        var nextStatus = switch (status) {
+            case WAITING_CONFIRMATION -> OrderStatus.CONFIRMED;
+            case CONFIRMED -> OrderStatus.PACKING;
+            case PACKING -> OrderStatus.SHIPPING;
+            default -> throw new AssertionError(status);
+        };
+        var blocked = assertThrows(BusinessException.class, () -> orderService.updateOrderStatus(
+                staffId, created.getId(), new UpdateOrderStatusRequest(nextStatus, null)));
+        assertEquals("CANCELLATION_REQUEST_PENDING", blocked.getCode());
+
+        var cancelled = orderService.updateOrderStatus(staffId, created.getId(), approval);
         assertEquals(OrderStatus.CANCELLED, cancelled.getStatus());
+        assertNull(cancelled.getCancellationRequestReason());
         assertEquals(10, currentStock(variantId));
         assertEquals("RELEASED", couponUsageStatus(created.getId()));
         assertEquals("CANCELLED", paymentStatus(created.getId()));
         assertEquals("Đổi cấu hình khác", cancelled.getStatusHistories().getFirst().getNote());
+        assertEquals(staffId, cancelled.getStatusHistories().getFirst().getChangedBy());
 
         // Hủy lặp lần 2 không được cộng tồn kho thêm lần nữa
-        orderService.cancelOrder(userId, created.getId(), "Hủy lặp");
+        orderService.updateOrderStatus(staffId, created.getId(), approval);
         assertEquals(10, currentStock(variantId));
     }
 
@@ -322,6 +359,55 @@ class OrderLifecycleE2ETest {
                 .build());
         assertEquals(new BigDecimal("120000.00"), orderWithLoyaltyCoupon.getDiscountAmount());
         assertEquals(personalCode, orderWithLoyaltyCoupon.getCouponCodeSnapshot());
+    }
+
+    @Test
+    void refundFundsWalletCheckoutAndInsufficientBalanceRollsBackOrder() {
+        cartService.addItemToCart(userId, new AddCartItemRequest(variantId, 2));
+        var original = orderService.createOrder(userId, CreateOrderRequest.builder()
+                .addressId(addressId).paymentMethod("COD").build());
+        for (OrderStatus step : List.of(OrderStatus.CONFIRMED, OrderStatus.PACKING, OrderStatus.SHIPPING, OrderStatus.DELIVERED)) {
+            orderService.updateOrderStatus(staffId, original.getId(), new UpdateOrderStatusRequest(step, null));
+        }
+        var collection = new RecordCodPaymentRequest();
+        collection.setOrderId(original.getId());
+        paymentService.recordCodPayment(collection);
+
+        var refund = refundRequestService.submit(userId, original.getId(), "Yêu cầu hoàn tiền", List.of());
+        var approved = refundRequestService.review(staffId, refund.id(), true, true, null);
+        assertEquals(OrderStatus.RETURNED, approved.orderStatus());
+        assertEquals(10, currentStock(variantId));
+        refundRequestService.review(staffId, refund.id(), true, true, null);
+        assertEquals(10, currentStock(variantId));
+        assertEquals(new BigDecimal("40000000.00"), storeCreditService.getWallet(userId).balance());
+
+        cartService.addItemToCart(userId, new AddCartItemRequest(variantId, 1));
+        var checkout = CreateOrderRequest.builder()
+                .addressId(addressId).paymentMethod("STORE_CREDIT").couponCode(couponCode)
+                .idempotencyKey("store-credit-" + UUID.randomUUID()).build();
+        var purchased = orderService.createOrder(userId, checkout);
+        assertEquals(OrderStatus.CONFIRMED, purchased.getStatus());
+        assertEquals(new BigDecimal("19500000.00"), purchased.getTotalAmount());
+        var payment = paymentService.getByOrderId(userId, purchased.getId());
+        assertEquals(PaymentMethod.STORE_CREDIT, payment.getMethod());
+        assertEquals(PaymentStatus.PAID, payment.getStatus());
+        assertEquals(9, currentStock(variantId));
+        assertEquals(purchased.getId(), orderService.createOrder(userId, checkout).getId());
+        var wallet = storeCreditService.getWallet(userId);
+        assertEquals(new BigDecimal("20500000.00"), wallet.balance());
+        assertEquals(List.of("PURCHASE", "REFUND"), wallet.entries().stream().map(entry -> entry.kind()).toList());
+
+        cartService.addItemToCart(userId, new AddCartItemRequest(variantId, 2));
+        String failingKey = "store-credit-" + UUID.randomUUID();
+        var tooExpensive = CreateOrderRequest.builder()
+                .addressId(addressId).paymentMethod("STORE_CREDIT").couponCode(couponCode)
+                .idempotencyKey(failingKey).build();
+        var failure = assertThrows(BusinessException.class, () -> orderService.createOrder(userId, tooExpensive));
+        assertEquals("INSUFFICIENT_STORE_CREDIT", failure.getCode());
+        assertEquals(wallet, storeCreditService.getWallet(userId));
+        assertEquals(9, currentStock(variantId));
+        assertEquals(2, cartService.getCart(userId).getItems().getFirst().getQuantity());
+        assertEquals(0L, jdbc.queryForObject("select count(*) from orders where idempotency_key = ?", Long.class, failingKey));
     }
 
     private int currentStock(Long id) {

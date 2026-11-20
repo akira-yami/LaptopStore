@@ -25,14 +25,14 @@ public class OrderMapper {
                 order.getNote(),
                 items.stream().map(this::toItemResponse).toList(),
                 statusHistories.stream().map(this::toStatusHistoryResponse).toList(),
-                order.getCreatedAt(), order.getUpdatedAt()
+                order.getCreatedAt(), order.getUpdatedAt(), order.getPaymentMethod(), order.getCancellationRequestReason()
         );
     }
 
     public OrderSummaryResponse toSummaryResponse(Order order, int totalItems) {
         return new OrderSummaryResponse(
                 order.getId(), order.getOrderCode(), order.getStatus(), totalItems,
-                order.getTotalAmount(), order.getRecipientName(), order.getCreatedAt()
+                order.getTotalAmount(), order.getRecipientName(), order.getCreatedAt(), order.getCancellationRequestReason()
         );
     }
 

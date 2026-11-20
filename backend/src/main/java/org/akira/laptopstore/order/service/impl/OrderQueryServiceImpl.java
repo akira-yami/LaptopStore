@@ -17,6 +17,8 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.util.Collection;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 import java.time.Duration;
 import java.time.Instant;
 
@@ -93,6 +95,12 @@ public class OrderQueryServiceImpl implements OrderQueryService {
         if (!order.getUserId().equals(userId)) {
             throw new AccessDeniedException("You do not own this order");
         }
+    }
+
+    @Override
+    public Map<Long, OrderStatus> getOrderStatuses(Collection<Long> orderIds) {
+        return orderRepository.findAllById(orderIds).stream()
+                .collect(Collectors.toMap(Order::getId, Order::getStatus));
     }
 
     // ONLINE PAYMENT

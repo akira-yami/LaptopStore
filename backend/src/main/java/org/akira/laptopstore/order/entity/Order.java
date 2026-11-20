@@ -5,6 +5,7 @@ import lombok.*;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import org.akira.laptopstore.order.entity.enums.CheckoutPaymentMethod;
 import org.akira.laptopstore.order.entity.enums.OrderStatus;
 
 @Entity
@@ -39,6 +40,13 @@ public class Order {
     @Column(name = "status", nullable = false)
     @Enumerated(EnumType.STRING)
     private OrderStatus status;
+
+    @Column(name = "payment_method", length = 30)
+    @Enumerated(EnumType.STRING)
+    private CheckoutPaymentMethod paymentMethod;
+
+    @Column(name = "cancellation_request_reason", length = 500)
+    private String cancellationRequestReason;
 
     @Column(name = "subtotal", nullable = false)
     private BigDecimal subtotal;

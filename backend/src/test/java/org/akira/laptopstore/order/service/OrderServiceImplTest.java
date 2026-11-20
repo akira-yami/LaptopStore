@@ -311,9 +311,9 @@ class OrderServiceImplTest {
     }
 
     @Test
-    void userCanCancelOrderWhenWaitingConfirmationAndRestoresStockAndCoupon() {
+    void userCanCancelUnpaidOnlineOrderAndRestoresStockAndCoupon() {
         Order order = order(10L, 42L);
-        order.setStatus(OrderStatus.WAITING_CONFIRMATION);
+        order.setStatus(OrderStatus.PENDING_PAYMENT);
         order.setCouponCodeSnapshot("DISCOUNT10");
         when(orders.findByIdForUpdate(10L)).thenReturn(Optional.of(order));
         when(orderItems.findByOrderId(10L)).thenReturn(List.of(OrderItem.builder()
@@ -731,11 +731,10 @@ class OrderServiceImplTest {
         delivered.setStatus(OrderStatus.DELIVERED);
         delivered.setCouponCodeSnapshot("VIP500");
         when(orders.findByIdForUpdate(55L)).thenReturn(Optional.of(delivered));
-        when(histories.findByOrderIdOrderByChangedAtDesc(55L)).thenReturn(List.of());
         when(orderItems.findByOrderId(55L)).thenReturn(List.of(OrderItem.builder()
                 .id(1L).productId(10L).variantId(7L).quantity(1).unitPrice(new BigDecimal("25000000")).build()));
 
-        service.updateOrderStatus(99L, 55L, new UpdateOrderStatusRequest(OrderStatus.RETURNED, "Máy lỗi màn hình"));
+        assertEquals(42L, service.confirmRefund(55L, 99L, 16L, true));
 
         assertEquals(OrderStatus.RETURNED, delivered.getStatus());
         verify(inventoryService).restoreForReturnedOrder(eq(55L), eq(99L), any());
