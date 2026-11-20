@@ -186,6 +186,9 @@ public class OrderCheckoutSupport {
         return BigDecimal.ZERO;
     }
 
+    private static final java.util.regex.Pattern RECIPIENT_PHONE_PATTERN =
+            java.util.regex.Pattern.compile("^[+0-9][0-9\\s().-]{7,19}$");
+
     private void validateShippingStrings(String recipientName, String recipientPhone, String shippingAddress) {
         if (isBlank(recipientName) || isBlank(recipientPhone) || isBlank(shippingAddress)) {
             throw new ValidationException("Vui lòng nhập đầy đủ tên người nhận, số điện thoại và địa chỉ giao hàng");
@@ -195,6 +198,12 @@ public class OrderCheckoutSupport {
         }
         if (recipientPhone.length() > 20) {
             throw new ValidationException("Số điện thoại người nhận không được vượt quá 20 ký tự");
+        }
+        String digitsOnly = recipientPhone.replaceAll("\\D", "");
+        if (!RECIPIENT_PHONE_PATTERN.matcher(recipientPhone).matches()
+                || digitsOnly.length() < 9
+                || digitsOnly.length() > 15) {
+            throw new ValidationException("Số điện thoại người nhận không hợp lệ");
         }
     }
 

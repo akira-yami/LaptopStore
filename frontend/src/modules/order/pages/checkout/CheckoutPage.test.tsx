@@ -305,4 +305,89 @@ describe('CheckoutPage', () => {
     const [, secondKey] = vi.mocked(orderApi.createOrder).mock.calls[1];
     expect(secondKey).not.toBe(firstKey);
   });
+
+  it('chỉ thanh toán các sản phẩm được chọn khi điều hướng kèm ?items=11', async () => {
+    const user = userEvent.setup();
+    vi.mocked(cartApi.get).mockResolvedValue({
+      id: 1,
+      totalItems: 2,
+      totalAmount: 45000000,
+      items: [
+        {
+          cartItemId: 11,
+          productId: 50,
+          variantId: 7,
+          productName: 'MacBook Air M3',
+          sku: 'MBA-M3',
+          variantName: '16GB / 512GB',
+          quantity: 1,
+          availableStock: 5,
+          sellable: true,
+          unitPrice: 20000000,
+          lineTotal: 20000000,
+        },
+        {
+          cartItemId: 12,
+          productId: 51,
+          variantId: 8,
+          productName: 'ThinkPad X1',
+          sku: 'TP-X1',
+          variantName: '16GB / 1TB',
+          quantity: 1,
+          availableStock: 5,
+          sellable: true,
+          unitPrice: 25000000,
+          lineTotal: 25000000,
+        },
+      ],
+    });
+    vi.mocked(orderApi.createOrder).mockResolvedValue({
+      id: 129,
+      userId: 42,
+      orderCode: 'ORD-129',
+      status: 'WAITING_CONFIRMATION',
+      totalItems: 1,
+      subtotal: 20000000,
+      discountAmount: 0,
+      shippingFee: 0,
+      totalAmount: 20000000,
+      recipientName: 'Phan Anh Khang',
+      recipientPhone: '0901234567',
+      shippingAddress: '123 Nguyen Trai, P2, Q5, TP.HCM',
+      couponCodeSnapshot: null,
+      items: [],
+      statusHistories: [],
+      createdAt: '2026-10-15T10:00:00Z',
+      updatedAt: '2026-10-15T10:00:00Z',
+    });
+    vi.mocked(paymentApi.startPayment).mockResolvedValue({
+      id: 33,
+      orderId: 129,
+      method: 'COD',
+      amount: 20000000,
+      status: 'PENDING',
+      createdAt: '2026-10-15T10:00:00Z',
+      expiresAt: null,
+    });
+
+    render(
+      <ToastProvider>
+        <MemoryRouter initialEntries={['/checkout?items=11']}>
+          <CheckoutPage />
+        </MemoryRouter>
+      </ToastProvider>
+    );
+
+    expect(await screen.findByText('MacBook Air M3')).toBeInTheDocument();
+    expect(screen.queryByText('ThinkPad X1')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /Đặt hàng/i }));
+
+    await waitFor(() => {
+      expect(orderApi.createOrder).toHaveBeenCalledWith(
+        expect.objectContaining({ cartItemIds: [11] }),
+        expect.any(String)
+      );
+    });
+  });
 });

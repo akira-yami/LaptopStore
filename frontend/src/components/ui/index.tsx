@@ -99,7 +99,6 @@ export const ORDER_STATUS: Record<string, { label: string; tone: BadgeTone }> = 
   WAITING_CONFIRMATION: { label: 'Chờ xác nhận', tone: 'orange' },
   CONFIRMED: { label: 'Đã xác nhận', tone: 'blue' },
   PACKING: { label: 'Đang chuẩn bị', tone: 'blue' },
-  PACKED: { label: 'Đang chuẩn bị', tone: 'blue' },
   SHIPPING: { label: 'Đang giao', tone: 'blue' },
   DELIVERED: { label: 'Đã giao', tone: 'green' },
   DELIVERY_FAILED: { label: 'Giao thất bại', tone: 'red' },

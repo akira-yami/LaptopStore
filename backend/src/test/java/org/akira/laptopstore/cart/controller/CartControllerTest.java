@@ -112,4 +112,24 @@ class CartControllerTest {
 
         verifyNoInteractions(cartService);
     }
+
+    @Test
+    void addAndUpdateCartRejectInvalidPayloadWith400BeforeCallingService() throws Exception {
+        CustomUserDetails principal = new CustomUserDetails(42L, "user42@example.com",
+                "unused", 0, "ACTIVE", List.of(new SimpleGrantedAuthority("ROLE_USER")));
+
+        mockMvc.perform(post(CART_PATH + "/items")
+                        .with(user(principal))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"productVariantId\":0,\"quantity\":-1}"))
+                .andExpect(status().isBadRequest());
+
+        mockMvc.perform(patch(CART_PATH + "/items/9")
+                        .with(user(principal))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"quantity\":0}"))
+                .andExpect(status().isBadRequest());
+
+        verifyNoInteractions(cartService);
+    }
 }

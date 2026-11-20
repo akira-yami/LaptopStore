@@ -203,7 +203,7 @@ export const StaffOrderListPage = () => {
                           Thu tiền COD
                         </button>
                       )}
-                      {(NEXT[o.status === 'PACKED' ? 'PACKING' : o.status] ?? []).map((to) => (
+                      {(NEXT[o.status] ?? []).map((to) => (
                         <button
                           key={to}
                           type="button"

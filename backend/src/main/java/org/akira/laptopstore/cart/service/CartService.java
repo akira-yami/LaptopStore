@@ -21,5 +21,8 @@ public interface CartService {
     // Method nay dc dung de phuc vu checkout
     CartSnapshot lockAndGetCheckoutCart(Long userId);
 
+    // Cho phép checkout chọn mua một phần giỏ hàng theo danh sách cartItemId
+    CartSnapshot lockAndGetCheckoutCart(Long userId, Collection<Long> selectedCartItemIds);
+
     void clearPurchasedItems(Long userId, Collection<Long> cartItemIds);
 }

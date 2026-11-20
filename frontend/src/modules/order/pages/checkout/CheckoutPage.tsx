@@ -5,8 +5,8 @@ import { Cart } from '@/modules/cart/types';
 import { userApi } from '@/modules/user/api/userApi';
 import { Address } from '@/modules/user/types';
 import { paymentApi } from '@/modules/payment/api/paymentApi';
-import React, { useCallback, useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { orderApi } from '../../api/orderApi';
 import { CheckoutPaymentMethod, CheckoutPreviewResponse } from '../../types';
 
@@ -20,8 +20,19 @@ const createIdempotencyKey = () =>
 
 export const CheckoutPage: React.FC = () => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const toast = useToast();
   const { refresh: refreshCart } = useCart();
+
+  const selectedCartItemIds = useMemo(() => {
+    const raw = searchParams.get('items');
+    if (!raw) return null;
+    const parsed = raw
+      .split(',')
+      .map((s) => Number(s.trim()))
+      .filter((n) => Number.isInteger(n) && n > 0);
+    return parsed.length > 0 ? Array.from(new Set(parsed)) : null;
+  }, [searchParams]);
 
   const [cart, setCart] = useState<Cart | null>(null);
   const [addresses, setAddresses] = useState<Address[]>([]);
@@ -56,6 +67,7 @@ export const CheckoutPage: React.FC = () => {
     shippingAddress,
     paymentMethod,
     appliedCouponCode,
+    selectedCartItemIds,
   ]);
 
   const loadCheckoutData = useCallback(async () => {
@@ -101,6 +113,7 @@ export const CheckoutPage: React.FC = () => {
         ...addressPayload(),
         paymentMethod,
         couponCode: couponCode.trim() || undefined,
+        cartItemIds: selectedCartItemIds ?? undefined,
       });
       setPreview(result);
       setAppliedCouponCode(result.couponCode ?? null);
@@ -127,9 +140,16 @@ export const CheckoutPage: React.FC = () => {
     }
   };
 
+  const checkoutItems = useMemo(() => {
+    if (!cart) return [];
+    if (!selectedCartItemIds) return cart.items;
+    const set = new Set(selectedCartItemIds);
+    return cart.items.filter((item) => set.has(item.cartItemId));
+  }, [cart, selectedCartItemIds]);
+
   const handleSubmitOrder = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!cart || cart.items.length === 0) {
+    if (!cart || checkoutItems.length === 0) {
       setError('Giỏ hàng đang trống, không thể tạo đơn hàng.');
       return;
     }
@@ -155,6 +175,7 @@ export const CheckoutPage: React.FC = () => {
           couponCode: appliedCouponCode ?? undefined,
           note: note.trim() || undefined,
           idempotencyKey,
+          cartItemIds: selectedCartItemIds ?? undefined,
         },
         idempotencyKey
       );
@@ -197,7 +218,8 @@ export const CheckoutPage: React.FC = () => {
     }
   };
 
-  const subtotal = preview ? preview.subtotal : cart?.totalAmount ?? 0;
+  const checkoutSubtotal = checkoutItems.reduce((sum, item) => sum + item.lineTotal, 0);
+  const subtotal = preview ? preview.subtotal : checkoutSubtotal;
   const discountAmount = preview ? preview.discountAmount : 0;
   const shippingFee = preview ? preview.shippingFee : 0;
   const totalAmount = preview ? preview.totalAmount : Math.max(0, subtotal - discountAmount + shippingFee);
@@ -206,7 +228,7 @@ export const CheckoutPage: React.FC = () => {
     return <div className="ls-container section"><Spinner label="Đang tải thông tin thanh toán" /></div>;
   }
 
-  if (!cart || cart.items.length === 0) {
+  if (!cart || checkoutItems.length === 0) {
     return (
       <div className="ls-container section">
         <EmptyState icon="cart" title="Giỏ hàng đang trống" copy={error ?? 'Thêm sản phẩm vào giỏ trước khi thanh toán.'} action={{ label: 'Khám phá laptop', to: '/products' }} />
@@ -287,7 +309,7 @@ export const CheckoutPage: React.FC = () => {
 
           <section className="panel">
             <div className="step-title"><span>03</span><h3>Kiểm tra sản phẩm</h3></div>
-            {cart.items.map((item) => (
+            {checkoutItems.map((item) => (
                 <div className="order-line" key={item.cartItemId}>
                   <ProductImage src={item.thumbnailImage} alt={item.productName} hint={item.productName} />
                   <div style={{ minWidth: 0 }}>

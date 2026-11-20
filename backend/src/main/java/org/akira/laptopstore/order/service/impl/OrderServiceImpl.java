@@ -100,7 +100,10 @@ public class OrderServiceImpl implements OrderService {
             throw new ValidationException("Giỏ hàng đang trống");
         }
 
-        List<CartSnapshot.Item> cartItems = cart.getItems().stream()
+        List<Long> selectedCartItemIds = normalizeSelectedCartItemIds(safeRequest.getCartItemIds());
+        List<CartItemResponse> previewSourceItems = filterSelectedCartItems(cart.getItems(), selectedCartItemIds);
+
+        List<CartSnapshot.Item> cartItems = previewSourceItems.stream()
                 .map(item -> new CartSnapshot.Item(item.getCartItemId(), item.getVariantId(), item.getQuantity()))
                 .toList();
 
@@ -116,7 +119,7 @@ public class OrderServiceImpl implements OrderService {
 
         List<OrderItemResponse> previewItems = new ArrayList<>(cartItems.size());
         int totalItems = 0;
-        for (CartItemResponse item : cart.getItems()) {
+        for (CartItemResponse item : previewSourceItems) {
             CheckoutVariantSnapshot variant = checkoutSupport.requireVariant(variants, item.getVariantId());
             BigDecimal lineTotal = variant.getUnitPrice().multiply(BigDecimal.valueOf(item.getQuantity()));
             totalItems += item.getQuantity();
@@ -169,6 +172,7 @@ public class OrderServiceImpl implements OrderService {
                 true
         );
         String requestedCouponCode = checkoutSupport.normalizeUpper(request.getCouponCode());
+        List<Long> selectedCartItemIds = normalizeSelectedCartItemIds(request.getCartItemIds());
 
         // 2. Kiểm tra Idempotency-Key chống tạo đơn trùng.
         String idempotencyKey = checkoutSupport.normalize(request.getIdempotencyKey());
@@ -189,7 +193,7 @@ public class OrderServiceImpl implements OrderService {
 
                 List<OrderItem> previousItems = orderItemRepository.findByOrderId(previous.getId());
                 CartResponse currentCart = cartService.getCart(userId);
-                if (!sameCartAndAmountPayload(previous, previousItems, currentCart)) {
+                if (!sameCartAndAmountPayload(previous, previousItems, currentCart, selectedCartItemIds)) {
                     log.warn("Xung đột Idempotency-Key={} cho userId={}: danh sách sản phẩm, số lượng hoặc giá trị giỏ hàng không khớp đơn cũ orderId={}",
                             idempotencyKey, userId, previous.getId());
                     throw new BusinessException(
@@ -209,8 +213,10 @@ public class OrderServiceImpl implements OrderService {
             }
         }
 
-        // 3. Khóa cart để dữ liệu checkout không bị thay đổi đồng thời.
-        CartSnapshot cart = cartService.lockAndGetCheckoutCart(userId);
+        // 3. Khóa cart để dữ liệu checkout không bị thay đổi đồng thời (hỗ trợ mua một phần hoặc toàn bộ giỏ).
+        CartSnapshot cart = selectedCartItemIds == null
+                ? cartService.lockAndGetCheckoutCart(userId)
+                : cartService.lockAndGetCheckoutCart(userId, selectedCartItemIds);
         if (cart == null || cart.getItems() == null || cart.getItems().isEmpty()) {
             throw new ValidationException("Giỏ hàng đang trống");
         }
@@ -413,7 +419,8 @@ public class OrderServiceImpl implements OrderService {
                 pendingCount += count;
             } else if (status == OrderStatus.CONFIRMED
                     || status == OrderStatus.PACKING
-                    || status == OrderStatus.SHIPPING) {
+                    || status == OrderStatus.SHIPPING
+                    || status == OrderStatus.DELIVERY_FAILED) {
                 inProgressCount += count;
             } else if (status == OrderStatus.DELIVERED) {
                 deliveredCount += count;
@@ -664,10 +671,24 @@ public class OrderServiceImpl implements OrderService {
     private boolean sameCartAndAmountPayload(
             Order previous,
             List<OrderItem> previousItems,
-            CartResponse currentCart
+            CartResponse currentCart,
+            List<Long> selectedCartItemIds
     ) {
         if (currentCart == null || currentCart.getItems() == null || currentCart.getItems().isEmpty()) {
             return true;
+        }
+        List<CartItemResponse> relevantItems;
+        if (selectedCartItemIds == null) {
+            relevantItems = currentCart.getItems();
+        } else {
+            java.util.Set<Long> selectedSet = new java.util.HashSet<>(selectedCartItemIds);
+            relevantItems = currentCart.getItems().stream()
+                    .filter(item -> selectedSet.contains(item.getCartItemId()))
+                    .toList();
+            if (relevantItems.isEmpty()) {
+                // Các dòng đã mua trong lần checkout đầu đã bị clearPurchasedItems xóa khỏi giỏ -> retry hợp lệ.
+                return true;
+            }
         }
         if (previousItems == null || previousItems.isEmpty()) {
             return false;
@@ -684,7 +705,7 @@ public class OrderServiceImpl implements OrderService {
         // 2. Gom số lượng theo từng variantId và tính lại tổng tạm tính từ giỏ hàng hiện tại.
         Map<Long, Integer> currentQtyByVariant = new HashMap<>();
         BigDecimal currentSubtotal = BigDecimal.ZERO;
-        for (CartItemResponse item : currentCart.getItems()) {
+        for (CartItemResponse item : relevantItems) {
             if (item.getVariantId() == null || item.getQuantity() == null || item.getUnitPrice() == null) {
                 return false;
             }
@@ -703,6 +724,40 @@ public class OrderServiceImpl implements OrderService {
             return false;
         }
         return previous.getSubtotal() != null && previous.getSubtotal().compareTo(currentSubtotal) == 0;
+    }
+
+    private List<Long> normalizeSelectedCartItemIds(List<Long> rawIds) {
+        if (rawIds == null || rawIds.isEmpty()) {
+            return null;
+        }
+        java.util.LinkedHashSet<Long> unique = new java.util.LinkedHashSet<>();
+        for (Long id : rawIds) {
+            if (id == null || id <= 0) {
+                throw new ValidationException("Danh sách cartItemIds phải chứa các ID hợp lệ (> 0)");
+            }
+            unique.add(id);
+        }
+        return List.copyOf(unique);
+    }
+
+    private List<CartItemResponse> filterSelectedCartItems(
+            List<CartItemResponse> allItems,
+            List<Long> selectedCartItemIds
+    ) {
+        if (selectedCartItemIds == null) {
+            return allItems;
+        }
+        Map<Long, CartItemResponse> byId = allItems.stream()
+                .collect(Collectors.toMap(CartItemResponse::getCartItemId, item -> item, (a, b) -> a));
+        List<CartItemResponse> selected = new ArrayList<>(selectedCartItemIds.size());
+        for (Long id : selectedCartItemIds) {
+            CartItemResponse item = byId.get(id);
+            if (item == null) {
+                throw new ResourceNotFoundException("Không tìm thấy sản phẩm trong giỏ hàng: " + id);
+            }
+            selected.add(item);
+        }
+        return selected;
     }
 
     private boolean isUserIdempotencyConstraintViolation(DataIntegrityViolationException ex) {

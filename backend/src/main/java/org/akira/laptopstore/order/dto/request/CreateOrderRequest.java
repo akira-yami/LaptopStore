@@ -6,6 +6,8 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.util.List;
+
 @Data
 @Builder
 @NoArgsConstructor
@@ -30,6 +32,9 @@ public class CreateOrderRequest {
 
     private String idempotencyKey;
 
+    // Tùy chọn: danh sách cartItemId được chọn để thanh toán (bỏ trống = toàn bộ giỏ hàng)
+    private List<Long> cartItemIds;
+
     public CreateOrderRequest(
             String recipientName,
             String recipientPhone,
@@ -38,10 +43,10 @@ public class CreateOrderRequest {
             String note,
             String idempotencyKey
     ) {
-        this(null, recipientName, recipientPhone, shippingAddress, null, couponCode, note, idempotencyKey);
+        this(null, recipientName, recipientPhone, shippingAddress, null, couponCode, note, idempotencyKey, null);
     }
 
     public CreateOrderRequest(Long addressId, String paymentMethod, String couponCode) {
-        this(addressId, null, null, null, paymentMethod, couponCode, null, null);
+        this(addressId, null, null, null, paymentMethod, couponCode, null, null, null);
     }
 }

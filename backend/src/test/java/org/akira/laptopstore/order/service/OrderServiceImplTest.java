@@ -792,6 +792,67 @@ class OrderServiceImplTest {
         verify(orders).findByUserIdAndStatusIn(eq(42L), eq(pendingGroup), any());
     }
 
+    @Test
+    void createOrderRejectsMalformedRecipientPhone() {
+        CreateOrderRequest request = CreateOrderRequest.builder()
+                .recipientName("Nguyen Van A")
+                .recipientPhone("abc-not-phone")
+                .shippingAddress("123 Nguyen Trai, TP.HCM")
+                .paymentMethod("COD")
+                .build();
+
+        assertThrows(ValidationException.class, () -> service.createOrder(42L, request));
+        verifyNoInteractions(cartService, catalogCheckoutService);
+    }
+
+    @Test
+    void getDashboardSummaryIncludesDeliveryFailedInInProgressCount() {
+        when(orders.summarizeByStatus()).thenReturn(List.of(
+                new Object[]{OrderStatus.CONFIRMED, 1L, new BigDecimal("10000000")},
+                new Object[]{OrderStatus.SHIPPING, 2L, new BigDecimal("20000000")},
+                new Object[]{OrderStatus.DELIVERY_FAILED, 3L, new BigDecimal("30000000")}
+        ));
+
+        var summary = service.getDashboardSummary();
+
+        assertEquals(6L, summary.getTotalOrders());
+        assertEquals(6L, summary.getInProgressCount());
+    }
+
+    @Test
+    void cartAndOrderContractsSupportPartialCartItemSelection() {
+        when(cartService.lockAndGetCheckoutCart(42L, List.of(9L))).thenReturn(new CartSnapshot(
+                3L, 42L, List.of(new CartSnapshot.Item(9L, 7L, 1))
+        ));
+        when(catalogCheckoutService.lockAndGetSellableVariants(List.of(7L))).thenReturn(List.of(
+                new CheckoutVariantSnapshot(7L, 70L, "MacBook Air M3", "16GB - 512GB",
+                        "MBA-M3", new BigDecimal("20000000"), 5)
+        ));
+        when(orders.saveAndFlush(any(Order.class))).thenAnswer(inv -> {
+            Order saved = inv.getArgument(0);
+            saved.setId(300L);
+            saved.setCreatedAt(Instant.now());
+            saved.setUpdatedAt(saved.getCreatedAt());
+            return saved;
+        });
+        when(orderItems.saveAll(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(histories.save(any(OrderStatusHistory.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        CreateOrderRequest request = CreateOrderRequest.builder()
+                .recipientName("Nguyen Van A")
+                .recipientPhone("0901234567")
+                .shippingAddress("123 Nguyen Trai, TP.HCM")
+                .paymentMethod("COD")
+                .cartItemIds(List.of(9L))
+                .build();
+
+        var response = service.createOrder(42L, request);
+
+        assertEquals(300L, response.getId());
+        verify(cartService).lockAndGetCheckoutCart(42L, List.of(9L));
+        verify(cartService).clearPurchasedItems(42L, List.of(9L));
+    }
+
     private Order order(Long id, Long userId) {
         return Order.builder().id(id).userId(userId).orderCode("ORD-" + id).status(OrderStatus.CONFIRMED)
                 .subtotal(new BigDecimal("25000000")).discountAmount(BigDecimal.ZERO).shippingFee(BigDecimal.ZERO)

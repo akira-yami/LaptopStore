@@ -1,5 +1,6 @@
 package org.akira.laptopstore.cart.controller;
 
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.akira.laptopstore.cart.dto.request.AddCartItemRequest;
 import org.akira.laptopstore.cart.dto.request.UpdateCartItemRequest;
@@ -25,7 +26,7 @@ public class CartController {
     @PostMapping("/items")
     public ResponseEntity<CartResponse> addItemToCart(
             @AuthenticationPrincipal CustomUserDetails userDetails,
-            @RequestBody AddCartItemRequest request
+            @Valid @RequestBody AddCartItemRequest request
     ) {
         CartResponse response = cartService.addItemToCart(userDetails.getId(), request);
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
@@ -35,7 +36,7 @@ public class CartController {
     public ResponseEntity<CartResponse> updateCartItem(
             @AuthenticationPrincipal CustomUserDetails userDetails,
             @PathVariable Long cartItemId,
-            @RequestBody UpdateCartItemRequest request
+            @Valid @RequestBody UpdateCartItemRequest request
     ) {
         return ResponseEntity.ok(
                 cartService.updateCartItem(userDetails.getId(), cartItemId, request)

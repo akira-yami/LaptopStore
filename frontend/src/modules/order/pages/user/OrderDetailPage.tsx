@@ -23,7 +23,6 @@ import { OrderDetail } from '../../types';
 
 const STAGES = ['WAITING_CONFIRMATION', 'CONFIRMED', 'PACKING', 'SHIPPING', 'DELIVERED'];
 const stageOf = (status: string) => {
-  if (status === 'PACKED') return STAGES.indexOf('PACKING');
   if (['CREATED', 'PENDING_PAYMENT'].includes(status)) return 0;
   return STAGES.indexOf(status);
 };
@@ -126,7 +125,7 @@ export const OrderDetailPage = () => {
   const paymentBadge = payment ? PAYMENT_STATUS_LABEL[payment.status] : null;
 
   const historyDate = (status: string) => {
-    const h = order.statusHistories.find((x) => x.toStatus === status || (status === 'PACKING' && x.toStatus === 'PACKED'));
+    const h = order.statusHistories.find((x) => x.toStatus === status);
     return h ? formatDateTime(h.changedAt) : 'Tiếp theo';
   };
 

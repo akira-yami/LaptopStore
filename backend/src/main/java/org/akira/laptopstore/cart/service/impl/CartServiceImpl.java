@@ -133,14 +133,31 @@ public class CartServiceImpl implements CartService {
     @Override
     @Transactional(propagation = Propagation.MANDATORY)
     public CartSnapshot lockAndGetCheckoutCart(Long userId) {
+        return lockAndGetCheckoutCart(userId, null);
+    }
+
+    @Override
+    @Transactional(propagation = Propagation.MANDATORY)
+    public CartSnapshot lockAndGetCheckoutCart(Long userId, Collection<Long> selectedCartItemIds) {
         requireUserId(userId);
         Cart cart = lockedCart(userId);
         if (cart.getItems().isEmpty()) {
             throw new ValidationException("Cart is empty");
         }
-        return new CartSnapshot(cart.getId(), userId, cart.getItems().stream()
+        if (selectedCartItemIds == null || selectedCartItemIds.isEmpty()) {
+            return new CartSnapshot(cart.getId(), userId, cart.getItems().stream()
+                    .map(item -> new CartSnapshot.Item(item.getId(), item.getVariantId(), item.getQuantity()))
+                    .toList());
+        }
+        if (selectedCartItemIds.stream().anyMatch(id -> id == null || id <= 0)) {
+            throw new ValidationException("cartItemIds must contain positive IDs");
+        }
+        java.util.LinkedHashSet<Long> uniqueIds = new java.util.LinkedHashSet<>(selectedCartItemIds);
+        java.util.List<CartSnapshot.Item> selectedItems = uniqueIds.stream()
+                .map(id -> findItem(cart, id))
                 .map(item -> new CartSnapshot.Item(item.getId(), item.getVariantId(), item.getQuantity()))
-                .toList());
+                .toList();
+        return new CartSnapshot(cart.getId(), userId, selectedItems);
     }
 
     @Override

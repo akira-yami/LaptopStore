@@ -6,6 +6,8 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.util.List;
+
 @Data
 @Builder
 @NoArgsConstructor
@@ -24,4 +26,7 @@ public class CheckoutPreviewRequest {
     private String paymentMethod;
 
     private String couponCode;
+
+    // Tùy chọn: danh sách cartItemId được chọn để xem trước (bỏ trống = toàn bộ giỏ hàng)
+    private List<Long> cartItemIds;
 }

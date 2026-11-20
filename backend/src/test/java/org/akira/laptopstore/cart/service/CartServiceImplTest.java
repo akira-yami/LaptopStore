@@ -111,8 +111,11 @@ class CartServiceImplTest {
         addLine(12L, 8L, 1);
         when(carts.findByUserIdForUpdate(42L)).thenReturn(Optional.of(cart));
         var snapshot = service.lockAndGetCheckoutCart(42L);
+        var partialSnapshot = service.lockAndGetCheckoutCart(42L, List.of(9L));
         service.clearPurchasedItems(42L, List.of(9L));
         assertEquals(2, snapshot.getItems().size());
+        assertEquals(1, partialSnapshot.getItems().size());
+        assertEquals(9L, partialSnapshot.getItems().getFirst().getCartItemId());
         assertEquals(List.of(12L), cart.getItems().stream().map(CartItem::getId).toList());
         assertThrows(UnsupportedOperationException.class, () -> snapshot.getItems().clear());
     }

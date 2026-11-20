@@ -4,7 +4,6 @@ export type OrderStatus =
   | 'WAITING_CONFIRMATION'
   | 'CONFIRMED'
   | 'PACKING'
-  | 'PACKED'
   | 'SHIPPING'
   | 'DELIVERED'
   | 'DELIVERY_FAILED'
@@ -65,6 +64,7 @@ export interface CheckoutPreviewRequest {
   shippingAddress?: string;
   paymentMethod?: CheckoutPaymentMethod;
   couponCode?: string;
+  cartItemIds?: number[];
 }
 
 export interface CheckoutPreviewResponse {
@@ -91,6 +91,7 @@ export interface CreateOrderRequest {
   couponCode?: string;
   note?: string;
   idempotencyKey?: string;
+  cartItemIds?: number[];
 }
 
 export interface OrderDashboardSummary {

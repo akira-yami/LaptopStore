@@ -29,7 +29,7 @@ test.describe('Luồng vận hành E2E của Staff / Admin', () => {
     const codPendingRow = page.locator('tr', { hasText: '#ORD-COD-202' });
     await codPendingRow.getByRole('button', { name: 'Đã xác nhận' }).click();
     await page.getByRole('button', { name: 'Xác nhận', exact: true }).click();
-    await expect(page.getByText(/Đơn #ORD-COD-202/i)).toBeVisible();
+    await expect(page.getByText(/Đơn #ORD-COD-202: Đã xác nhận/i)).toBeVisible();
     expect(state.orders.find((o) => o.id === 202)?.status).toBe('CONFIRMED');
 
     // Đơn DELIVERED có nút Thu tiền COD
