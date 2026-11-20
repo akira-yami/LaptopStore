@@ -19,6 +19,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -217,6 +218,59 @@ class OrderLifecycleE2ETest {
         boolean confirmed = orderPaymentService.confirmOnlinePayment(created.getId());
         assertFalse(confirmed);
         assertEquals(OrderStatus.CANCELLED, orderService.getStaffOrder(created.getId()).getStatus());
+    }
+
+    @Test
+    void twoUsersCanUseSameIdempotencyKeyIndependentlyAndSameUserCannotDuplicateInDbE2E() {
+        String sharedIdempotencyKey = "shared-idem-key-" + UUID.randomUUID();
+
+        // User 1 tạo đơn với Idempotency-Key dùng chung
+        cartService.addItemToCart(userId, new AddCartItemRequest(variantId, 1));
+        var orderUser1 = orderService.createOrder(userId, CreateOrderRequest.builder()
+                .addressId(addressId)
+                .paymentMethod("COD")
+                .idempotencyKey(sharedIdempotencyKey)
+                .build());
+
+        // User 2 (dùng staffId làm user thứ 2) tạo đơn với CÙNG Idempotency-Key phải thành công, không lỗi 23505
+        cartService.addItemToCart(staffId, new AddCartItemRequest(variantId, 1));
+        var orderUser2 = orderService.createOrder(staffId, CreateOrderRequest.builder()
+                .recipientName("E2E User 2")
+                .recipientPhone("0909999999")
+                .shippingAddress("456 Le Loi, Q1, TP.HCM")
+                .paymentMethod("COD")
+                .idempotencyKey(sharedIdempotencyKey)
+                .build());
+
+        assertNotEquals(orderUser1.getId(), orderUser2.getId());
+        assertEquals(userId, orderUser1.getUserId());
+        assertEquals(staffId, orderUser2.getUserId());
+
+        // Cùng user_id + idempotency_key vẫn bị ràng buộc uq_orders_user_idempotency_key chặn ở tầng DB
+        DataIntegrityViolationException duplicateSameUserEx = assertThrows(
+                DataIntegrityViolationException.class,
+                () -> jdbc.update(
+                        "insert into orders (user_id, order_code, status, subtotal, discount_amount, shipping_fee, total_amount, recipient_name, recipient_phone, shipping_address, idempotency_key) " +
+                                "values (?, ?, 'WAITING_CONFIRMATION', 100, 0, 0, 100, 'Dup', '0900000000', 'Addr', ?)",
+                        userId,
+                        "ORD-DUP-" + UUID.randomUUID().toString().substring(0, 8),
+                        sharedIdempotencyKey
+                )
+        );
+        assertTrue(duplicateSameUserEx.getMessage().contains("uq_orders_user_idempotency_key"));
+
+        // Cùng user vẫn tạo được nhiều đơn khi idempotency_key = NULL
+        cartService.addItemToCart(userId, new AddCartItemRequest(variantId, 1));
+        var nullKeyOrder1 = orderService.createOrder(userId, CreateOrderRequest.builder()
+                .addressId(addressId)
+                .paymentMethod("COD")
+                .build());
+        cartService.addItemToCart(userId, new AddCartItemRequest(variantId, 1));
+        var nullKeyOrder2 = orderService.createOrder(userId, CreateOrderRequest.builder()
+                .addressId(addressId)
+                .paymentMethod("COD")
+                .build());
+        assertNotEquals(nullKeyOrder1.getId(), nullKeyOrder2.getId());
     }
 
     private int currentStock(Long id) {

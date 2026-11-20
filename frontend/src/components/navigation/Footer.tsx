@@ -33,7 +33,6 @@ export const Footer: React.FC = () => (
             </div>
             <div className="footer-bottom">
                 <span>© 2026 laptopstore</span>
-                <span>Đồ án J2EE · Nhóm 4</span>
             </div>
         </div>
     </footer>

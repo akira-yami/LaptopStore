@@ -38,6 +38,7 @@ import org.akira.laptopstore.order.statemachine.OrderStateMachine;
 import org.akira.laptopstore.order.util.OrderCodeGenerator;
 import org.akira.laptopstore.promotion.dto.response.CouponEvaluation;
 import org.akira.laptopstore.promotion.service.CouponService;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
@@ -169,7 +170,7 @@ public class OrderServiceImpl implements OrderService {
                 List<OrderStatusHistory> previousHistories =
                         orderStatusHistoryRepository.findByOrderIdOrderByChangedAtDesc(previous.getId());
                 if (!sameCheckoutPayload(previous, previousHistories, resolvedShipping, requestedCouponCode, initialStatus)) {
-                    log.warn("Xung đột Idempotency-Key={} cho userId={}: dữ liệu checkout không khớp đơn cũ orderId={}",
+                    log.warn("Xung đột Idempotency-Key={} cho userId={}: thông tin nhận hàng/coupon/thanh toán không khớp đơn cũ orderId={}",
                             idempotencyKey, userId, previous.getId());
                     throw new BusinessException(
                             HttpStatus.CONFLICT,
@@ -177,11 +178,24 @@ public class OrderServiceImpl implements OrderService {
                             "Idempotency-Key đã được sử dụng với dữ liệu đặt hàng khác"
                     );
                 }
+
+                List<OrderItem> previousItems = orderItemRepository.findByOrderId(previous.getId());
+                CartResponse currentCart = cartService.getCart(userId);
+                if (!sameCartAndAmountPayload(previous, previousItems, currentCart)) {
+                    log.warn("Xung đột Idempotency-Key={} cho userId={}: danh sách sản phẩm, số lượng hoặc giá trị giỏ hàng không khớp đơn cũ orderId={}",
+                            idempotencyKey, userId, previous.getId());
+                    throw new BusinessException(
+                            HttpStatus.CONFLICT,
+                            "IDEMPOTENCY_CONFLICT",
+                            "Idempotency-Key đã được sử dụng với giỏ hàng hoặc giá trị đơn hàng khác"
+                    );
+                }
+
                 log.info("Phát hiện yêu cầu đặt hàng lặp với Idempotency-Key={} cho userId={}, trả về đơn cũ orderId={}",
                         idempotencyKey, userId, previous.getId());
                 return orderMapper.toResponse(
                         previous,
-                        orderItemRepository.findByOrderId(previous.getId()),
+                        previousItems,
                         previousHistories
                 );
             }
@@ -209,7 +223,9 @@ public class OrderServiceImpl implements OrderService {
                 cart.getItems(), variants, userId, requestedCouponCode);
 
         // 7. Lưu order để có ID cho item, coupon usage, lịch sử trạng thái và lịch sử kho.
-        Order order = orderRepository.saveAndFlush(Order.builder()
+        // Nếu có 2 request cùng userId + Idempotency-Key chạy song song vượt qua bước 2,
+        // ràng buộc uq_orders_user_idempotency_key ở DB sẽ chặn tại đây -> trả về 409 IDEMPOTENCY_CONFLICT thay vì 500.
+        Order pendingOrder = Order.builder()
                 .userId(userId)
                 .orderCode(OrderCodeGenerator.generate())
                 .status(initialStatus)
@@ -222,7 +238,22 @@ public class OrderServiceImpl implements OrderService {
                 .shippingAddress(resolvedShipping.shippingAddress())
                 .couponCodeSnapshot(pricing.couponCodeSnapshot())
                 .idempotencyKey(idempotencyKey)
-                .build());
+                .build();
+        Order order;
+        try {
+            order = orderRepository.saveAndFlush(pendingOrder);
+        } catch (DataIntegrityViolationException ex) {
+            if (idempotencyKey != null && isUserIdempotencyConstraintViolation(ex)) {
+                log.warn("Phát hiện request đặt hàng đồng thời bị trùng (userId={}, Idempotency-Key={}) bởi constraint DB",
+                        userId, idempotencyKey);
+                throw new BusinessException(
+                        HttpStatus.CONFLICT,
+                        "IDEMPOTENCY_CONFLICT",
+                        "Yêu cầu đặt hàng với Idempotency-Key này đang được xử lý hoặc đã tồn tại"
+                );
+            }
+            throw ex;
+        }
 
         // 8. Khóa và ghi nhận lượt sử dụng coupon gắn với orderId trong cùng transaction.
         if (requestedCouponCode != null) {
@@ -537,6 +568,7 @@ public class OrderServiceImpl implements OrderService {
                 : OrderStatus.WAITING_CONFIRMATION;
     }
 
+    // Hàm này được dùng để kiểm tra tính Idempotency, xem 1 yêu cầu đặt hàng có bị gửi nhiều lần không
     private boolean sameCheckoutPayload(
             Order order,
             List<OrderStatusHistory> histories,
@@ -555,6 +587,74 @@ public class OrderServiceImpl implements OrderService {
                 && Objects.equals(order.getShippingAddress(), resolvedShipping.shippingAddress())
                 && Objects.equals(checkoutSupport.normalizeUpper(order.getCouponCodeSnapshot()), requestedCouponCode)
                 && originalInitialStatus == expectedInitialStatus;
+    }
+
+    /**
+     * Đối chiếu giỏ hàng hiện tại với các dòng hàng và tổng tiền của đơn cũ khi phát hiện trùng Idempotency-Key.
+     * - Nếu giỏ hiện tại đang rỗng: lần checkout trước đã xóa giỏ sau khi commit thành công (bước 12),
+     *   nên đây là retry hợp lệ do lỗi mạng -> cho phép trả lại đơn cũ.
+     * - Nếu giỏ hiện tại còn sản phẩm: bắt buộc phải khớp toàn bộ biến thể, số lượng, đơn giá từng biến thể
+     *   và tổng tạm tính (subtotal) của đơn cũ; nếu lệch sẽ báo 409 IDEMPOTENCY_CONFLICT.
+     */
+    private boolean sameCartAndAmountPayload(
+            Order previous,
+            List<OrderItem> previousItems,
+            CartResponse currentCart
+    ) {
+        if (currentCart == null || currentCart.getItems() == null || currentCart.getItems().isEmpty()) {
+            return true;
+        }
+        if (previousItems == null || previousItems.isEmpty()) {
+            return false;
+        }
+
+        // 1. Gom số lượng và đơn giá theo từng variantId từ đơn hàng đã tạo trước đó.
+        Map<Long, Integer> previousQtyByVariant = new HashMap<>();
+        Map<Long, BigDecimal> previousPriceByVariant = new HashMap<>();
+        for (OrderItem item : previousItems) {
+            previousQtyByVariant.merge(item.getVariantId(), item.getQuantity(), Integer::sum);
+            previousPriceByVariant.putIfAbsent(item.getVariantId(), item.getUnitPrice());
+        }
+
+        // 2. Gom số lượng theo từng variantId và tính lại tổng tạm tính từ giỏ hàng hiện tại.
+        Map<Long, Integer> currentQtyByVariant = new HashMap<>();
+        BigDecimal currentSubtotal = BigDecimal.ZERO;
+        for (CartItemResponse item : currentCart.getItems()) {
+            if (item.getVariantId() == null || item.getQuantity() == null || item.getUnitPrice() == null) {
+                return false;
+            }
+            BigDecimal previousUnitPrice = previousPriceByVariant.get(item.getVariantId());
+            if (previousUnitPrice == null || previousUnitPrice.compareTo(item.getUnitPrice()) != 0) {
+                return false;
+            }
+            currentQtyByVariant.merge(item.getVariantId(), item.getQuantity(), Integer::sum);
+            currentSubtotal = currentSubtotal.add(
+                    item.getUnitPrice().multiply(BigDecimal.valueOf(item.getQuantity()))
+            );
+        }
+
+        // 3. Kiểm tra khớp hoàn toàn tập biến thể + số lượng và giá trị tạm tính của đơn hàng.
+        if (!Objects.equals(previousQtyByVariant, currentQtyByVariant)) {
+            return false;
+        }
+        return previous.getSubtotal() != null && previous.getSubtotal().compareTo(currentSubtotal) == 0;
+    }
+
+    private boolean isUserIdempotencyConstraintViolation(DataIntegrityViolationException ex) {
+        Throwable cursor = ex;
+        while (cursor != null) {
+            String message = cursor.getMessage();
+            if (message != null) {
+                String lower = message.toLowerCase(Locale.ROOT);
+                if (lower.contains("uq_orders_user_idempotency_key")
+                        || lower.contains("uq_orders_idempotency_key")
+                        || lower.contains("orders_idempotency_key_key")) {
+                    return true; // Lỗi này do lỗi của khóa trùng
+                }
+            }
+            cursor = cursor.getCause();
+        }
+        return false; // Lỗi do nguyên nhân khác. VD: trùng mã đơn hàng, vi phạm khóa ngoại, sai kiểu dữ liệu
     }
 
     private void requireUserId(Long userId) {

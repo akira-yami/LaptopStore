@@ -29,7 +29,9 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.akira.laptopstore.catalog.dto.response.ProductImageDto;
 import org.akira.laptopstore.catalog.dto.response.ProductResponse;
 import org.akira.laptopstore.catalog.dto.response.ProductSpecificationDto;
@@ -60,22 +62,24 @@ public class ProductServiceImpl implements ProductService {
         // Đổi hàm kiểm tra sang repository của Variant
         if (productVariantRepository.existsBySku(request.getSku())) {
             throw new BusinessException(
-                org.springframework.http.HttpStatus.BAD_REQUEST,
-                "SKU_ALREADY_EXISTS",
-                "Mã SKU '" + request.getSku() + "' đã tồn tại trong hệ thống. Vui lòng nhập mã khác!"
-            );
+                    org.springframework.http.HttpStatus.BAD_REQUEST,
+                    "SKU_ALREADY_EXISTS",
+                    "Mã SKU '" + request.getSku() + "' đã tồn tại trong hệ thống. Vui lòng nhập mã khác!");
         }
 
         // 1. Chặn đứng lỗi Foreign Key ngay tại đây!
         validateBrandAndCategoryExists(request.getBrandId(), request.getCategoryId());
 
         Category category = categoryRepository.findById(request.getCategoryId())
-                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy Category với ID: " + request.getCategoryId()));
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Không tìm thấy Category với ID: " + request.getCategoryId()));
 
         Brand brand = brandRepository.findById(request.getBrandId())
-                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy Brand với ID: " + request.getBrandId()));
+                .orElseThrow(
+                        () -> new ResourceNotFoundException("Không tìm thấy Brand với ID: " + request.getBrandId()));
 
-        // Mapping dữ liệu từ DTO sang Entity. Không map sku và price ở đây vì nó của Variant
+        // Mapping dữ liệu từ DTO sang Entity. Không map sku và price ở đây vì nó của
+        // Variant
         Product product = Product.builder()
                 .name(request.getName())
                 .description(request.getDescription())
@@ -100,21 +104,25 @@ public class ProductServiceImpl implements ProductService {
 
         // 3. Lấy Entity Category và Brand thực tế từ Database dựa vào ID mới
         Category category = categoryRepository.findById(request.getCategoryId())
-                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy Category với ID: " + request.getCategoryId()));
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Không tìm thấy Category với ID: " + request.getCategoryId()));
 
         Brand brand = brandRepository.findById(request.getBrandId())
-                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy Brand với ID: " + request.getBrandId()));
+                .orElseThrow(
+                        () -> new ResourceNotFoundException("Không tìm thấy Brand với ID: " + request.getBrandId()));
 
         // 4. Cập nhật các trường dữ liệu mới cho Entity cũ
-        // Lưu ý: Chỉ set những trường thuộc về Product, tuyệt đối không đụng SKU/Price ở đây.
+        // Lưu ý: Chỉ set những trường thuộc về Product, tuyệt đối không đụng SKU/Price
+        // ở đây.
         existingProduct.setName(request.getName());
         existingProduct.setDescription(request.getDescription());
         existingProduct.setCategory(category);
         existingProduct.setBrand(brand);
 
-        // Nếu DTO của em (UpdateProductRequest) có cho phép cập nhật thêm trạng thái, em có thể mở comment dòng dưới:
+        // Nếu DTO của em (UpdateProductRequest) có cho phép cập nhật thêm trạng thái,
+        // em có thể mở comment dòng dưới:
         // if (request.getStatus() != null) {
-        //     existingProduct.setStatus(request.getStatus());
+        // existingProduct.setStatus(request.getStatus());
         // }
 
         // 5. Lưu đè thông tin mới xuống Database và trả về
@@ -144,15 +152,16 @@ public class ProductServiceImpl implements ProductService {
     @Transactional(readOnly = true)
     public ProductResponse findProductById(Long id) {
 
-        // 1. Lấy Product kèm Variants (bỏ qua Images tạm thời để không bị lỗi MultipleBag)
+        // 1. Lấy Product kèm Variants (bỏ qua Images tạm thời để không bị lỗi
+        // MultipleBag)
         Product product = productRepository.findProductAndVariantsById(id)
                 .orElseThrow(() -> new BusinessException(
                         HttpStatus.NOT_FOUND,
                         "PRODUCT_NOT_FOUND",
-                        "Không tìm thấy sản phẩm với ID: " + id
-                ));
+                        "Không tìm thấy sản phẩm với ID: " + id));
 
-        // 2. Chọc thêm 1 câu query nữa để kéo nốt Images lên và nhét vào cái Product vừa tìm được
+        // 2. Chọc thêm 1 câu query nữa để kéo nốt Images lên và nhét vào cái Product
+        // vừa tìm được
         productRepository.findProductImagesById(id).ifPresent(p -> {
             product.setImages(p.getImages());
         });
@@ -165,14 +174,15 @@ public class ProductServiceImpl implements ProductService {
 
         // 1. Nếu có yêu cầu sort theo giá -> Gỡ bỏ Sort mặc định của Pageable
         if (StringUtils.hasText(criteria.getSortPriceDirection())) {
-            pageable = org.springframework.data.domain.PageRequest.of(
+            pageable = PageRequest.of(
                     pageable.getPageNumber(),
                     pageable.getPageSize(),
-                    org.springframework.data.domain.Sort.unsorted() // Ép nó thành Unsorted
+                    Sort.unsorted() // Ép nó thành Unsorted
             );
         }
 
-        // 2. Chạy Query với Specification (lúc này query.orderBy trong Specs sẽ lên ngôi)
+        // 2. Chạy Query với Specification (lúc này query.orderBy trong Specs sẽ lên
+        // ngôi)
         Specification<Product> spec = ProductSpecs.filterBy(criteria);
         Page<Product> productPage = productRepository.findAll(spec, pageable);
 
@@ -183,19 +193,17 @@ public class ProductServiceImpl implements ProductService {
         // Kiểm tra Brand
         if (brandId != null && !brandRepository.existsById(brandId)) {
             throw new BusinessException(
-                HttpStatus.BAD_REQUEST,
-                "BRAND_NOT_FOUND",
-                "Lỗi: Thương hiệu (Brand) với ID " + brandId + " không tồn tại trong hệ thống!"
-            );
+                    HttpStatus.BAD_REQUEST,
+                    "BRAND_NOT_FOUND",
+                    "Lỗi: Thương hiệu (Brand) với ID " + brandId + " không tồn tại trong hệ thống!");
         }
 
         // Kiểm tra Category
         if (categoryId != null && !categoryRepository.existsById(categoryId)) {
             throw new BusinessException(
-                HttpStatus.BAD_REQUEST,
-                "CATEGORY_NOT_FOUND",
-                "Lỗi: Danh mục (Category) với ID " + categoryId + " không tồn tại trong hệ thống!"
-            );
+                    HttpStatus.BAD_REQUEST,
+                    "CATEGORY_NOT_FOUND",
+                    "Lỗi: Danh mục (Category) với ID " + categoryId + " không tồn tại trong hệ thống!");
         }
     }
 
@@ -214,7 +222,8 @@ public class ProductServiceImpl implements ProductService {
         if (!productRepository.existsById(productId)) {
             throw new ResourceNotFoundException("Không tìm thấy sản phẩm với ID: " + productId);
         }
-        // Tìm specs, nếu không có thì trả về null (hoặc có thể ném lỗi tùy logic nghiệp vụ)
+        // Tìm specs, nếu không có thì trả về null (hoặc có thể ném lỗi tùy logic nghiệp
+        // vụ)
         return productSpecificationRepository.findByProductId(productId)
                 .map(productMapper::toProductSpecificationDto)
                 .orElse(null);

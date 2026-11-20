@@ -1,6 +1,6 @@
 package org.akira.laptopstore.catalog.repository;
 
-import jakarta.persistence.criteria.Join;
+import jakarta.persistence.criteria.Expression;
 import jakarta.persistence.criteria.JoinType;
 import jakarta.persistence.criteria.Predicate;
 import jakarta.persistence.criteria.Subquery;
@@ -67,7 +67,7 @@ public class ProductSpecs {
                 // Điều kiện RAM
                 if (StringUtils.hasText(criteria.getRam())) {
                     String searchRam = "%" + criteria.getRam().toLowerCase().replace(" ", "").replace("-", "") + "%";
-                    jakarta.persistence.criteria.Expression<String> ramDb = cb.function("REPLACE", String.class, cb.lower(variantRoot.get("ram")), cb.literal(" "), cb.literal(""));
+                    Expression<String> ramDb = cb.function("REPLACE", String.class, cb.lower(variantRoot.get("ram")), cb.literal(" "), cb.literal(""));
                     ramDb = cb.function("REPLACE", String.class, ramDb, cb.literal("-"), cb.literal(""));
                     variantPredicates.add(cb.like(ramDb, searchRam));
                 }
@@ -75,7 +75,7 @@ public class ProductSpecs {
                 // Điều kiện Storage
                 if (StringUtils.hasText(criteria.getStorage())) {
                     String searchStorage = "%" + criteria.getStorage().toLowerCase().replace(" ", "").replace("-", "") + "%";
-                    jakarta.persistence.criteria.Expression<String> storageDb = cb.function("REPLACE", String.class, cb.lower(variantRoot.get("storage")), cb.literal(" "), cb.literal(""));
+                    Expression<String> storageDb = cb.function("REPLACE", String.class, cb.lower(variantRoot.get("storage")), cb.literal(" "), cb.literal(""));
                     storageDb = cb.function("REPLACE", String.class, storageDb, cb.literal("-"), cb.literal(""));
                     variantPredicates.add(cb.like(storageDb, searchStorage));
                 }

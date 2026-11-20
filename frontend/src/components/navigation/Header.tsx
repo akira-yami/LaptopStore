@@ -4,6 +4,7 @@ import { ADMIN_HOME, STAFF_HOME } from '@/app/router/workspacePaths';
 import { Brand, Icon, useToast } from '@/components/ui';
 import { ThemeToggle } from '@/components/ui/ThemeToggle';
 import { ROLES } from '@/constants/roles';
+import { useHeaderScrolled } from '@/layouts/useHeaderScrolled';
 import React, { useEffect, useRef, useState } from 'react';
 import { Link, NavLink, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 
@@ -14,6 +15,7 @@ const initials = (name?: string, email?: string) => {
 };
 
 export const Header: React.FC = () => {
+    const scrolled = useHeaderScrolled();
     const { user, isAuthenticated, logout } = useAuth();
     const { count } = useCart();
     const toast = useToast();
@@ -90,7 +92,7 @@ export const Header: React.FC = () => {
     );
 
     return (
-        <header className="shop-header">
+        <header className="shop-header" data-scrolled={scrolled}>
             <div className="ls-container header-main">
                 <Brand />
                 <nav className="shop-nav" aria-label="Cửa hàng">{navLinks}</nav>

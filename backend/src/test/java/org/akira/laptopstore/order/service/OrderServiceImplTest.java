@@ -33,6 +33,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 
@@ -396,6 +397,7 @@ class OrderServiceImplTest {
                 OrderStatusHistory.builder().id(1L).fromStatus(null).toStatus(OrderStatus.WAITING_CONFIRMATION).build()
         ));
         when(orderItems.findByOrderId(100L)).thenReturn(List.of());
+        when(cartService.getCart(42L)).thenReturn(new CartResponse(3L, List.of(), 0, BigDecimal.ZERO));
 
         CreateOrderRequest request = CreateOrderRequest.builder()
                 .recipientName("Nguyen Van A")
@@ -408,7 +410,147 @@ class OrderServiceImplTest {
         var response = service.createOrder(42L, request);
 
         assertEquals(100L, response.getId());
-        verifyNoInteractions(cartService, catalogCheckoutService, inventoryService);
+        verify(cartService, never()).lockAndGetCheckoutCart(any());
+        verify(cartService, never()).clearPurchasedItems(any(), any());
+        verifyNoInteractions(catalogCheckoutService, inventoryService);
+    }
+
+    @Test
+    void createOrderWithSameIdempotencyKeyAndDifferentCartProductThrowsConflict() {
+        Order previous = order(100L, 42L);
+        previous.setStatus(OrderStatus.WAITING_CONFIRMATION);
+        previous.setIdempotencyKey("idem-diff-item");
+        when(orders.findByIdempotencyKeyAndUserId("idem-diff-item", 42L))
+                .thenReturn(Optional.of(previous));
+        when(histories.findByOrderIdOrderByChangedAtDesc(100L)).thenReturn(List.of(
+                OrderStatusHistory.builder().id(1L).fromStatus(null).toStatus(OrderStatus.WAITING_CONFIRMATION).build()
+        ));
+        when(orderItems.findByOrderId(100L)).thenReturn(List.of(
+                OrderItem.builder().id(1L).variantId(7L).quantity(1).unitPrice(new BigDecimal("25000000")).build()
+        ));
+        when(cartService.getCart(42L)).thenReturn(new CartResponse(
+                3L,
+                List.of(new CartItemResponse(9L, 8L, "Laptop B", "SKU-8", "32GB", 1,
+                        new BigDecimal("25000000"), new BigDecimal("25000000"))),
+                1,
+                new BigDecimal("25000000")
+        ));
+
+        CreateOrderRequest request = CreateOrderRequest.builder()
+                .recipientName("Nguyen Van A")
+                .recipientPhone("0900000000")
+                .shippingAddress("Ho Chi Minh City")
+                .paymentMethod("COD")
+                .idempotencyKey("idem-diff-item")
+                .build();
+
+        BusinessException ex = assertThrows(BusinessException.class, () -> service.createOrder(42L, request));
+        assertEquals(HttpStatus.CONFLICT, ex.getStatus());
+        assertEquals("IDEMPOTENCY_CONFLICT", ex.getCode());
+    }
+
+    @Test
+    void createOrderWithSameIdempotencyKeyAndDifferentQuantityThrowsConflict() {
+        Order previous = order(100L, 42L);
+        previous.setStatus(OrderStatus.WAITING_CONFIRMATION);
+        previous.setIdempotencyKey("idem-diff-qty");
+        when(orders.findByIdempotencyKeyAndUserId("idem-diff-qty", 42L))
+                .thenReturn(Optional.of(previous));
+        when(histories.findByOrderIdOrderByChangedAtDesc(100L)).thenReturn(List.of(
+                OrderStatusHistory.builder().id(1L).fromStatus(null).toStatus(OrderStatus.WAITING_CONFIRMATION).build()
+        ));
+        when(orderItems.findByOrderId(100L)).thenReturn(List.of(
+                OrderItem.builder().id(1L).variantId(7L).quantity(1).unitPrice(new BigDecimal("25000000")).build()
+        ));
+        when(cartService.getCart(42L)).thenReturn(new CartResponse(
+                3L,
+                List.of(new CartItemResponse(9L, 7L, "Laptop A", "SKU-7", "16GB", 2,
+                        new BigDecimal("25000000"), new BigDecimal("50000000"))),
+                2,
+                new BigDecimal("50000000")
+        ));
+
+        CreateOrderRequest request = CreateOrderRequest.builder()
+                .recipientName("Nguyen Van A")
+                .recipientPhone("0900000000")
+                .shippingAddress("Ho Chi Minh City")
+                .paymentMethod("COD")
+                .idempotencyKey("idem-diff-qty")
+                .build();
+
+        BusinessException ex = assertThrows(BusinessException.class, () -> service.createOrder(42L, request));
+        assertEquals(HttpStatus.CONFLICT, ex.getStatus());
+        assertEquals("IDEMPOTENCY_CONFLICT", ex.getCode());
+    }
+
+    @Test
+    void createOrderWithSameIdempotencyKeyAndDifferentPriceThrowsConflict() {
+        Order previous = order(100L, 42L);
+        previous.setStatus(OrderStatus.WAITING_CONFIRMATION);
+        previous.setIdempotencyKey("idem-diff-price");
+        when(orders.findByIdempotencyKeyAndUserId("idem-diff-price", 42L))
+                .thenReturn(Optional.of(previous));
+        when(histories.findByOrderIdOrderByChangedAtDesc(100L)).thenReturn(List.of(
+                OrderStatusHistory.builder().id(1L).fromStatus(null).toStatus(OrderStatus.WAITING_CONFIRMATION).build()
+        ));
+        when(orderItems.findByOrderId(100L)).thenReturn(List.of(
+                OrderItem.builder().id(1L).variantId(7L).quantity(1).unitPrice(new BigDecimal("25000000")).build()
+        ));
+        when(cartService.getCart(42L)).thenReturn(new CartResponse(
+                3L,
+                List.of(new CartItemResponse(9L, 7L, "Laptop A", "SKU-7", "16GB", 1,
+                        new BigDecimal("27000000"), new BigDecimal("27000000"))),
+                1,
+                new BigDecimal("27000000")
+        ));
+
+        CreateOrderRequest request = CreateOrderRequest.builder()
+                .recipientName("Nguyen Van A")
+                .recipientPhone("0900000000")
+                .shippingAddress("Ho Chi Minh City")
+                .paymentMethod("COD")
+                .idempotencyKey("idem-diff-price")
+                .build();
+
+        BusinessException ex = assertThrows(BusinessException.class, () -> service.createOrder(42L, request));
+        assertEquals(HttpStatus.CONFLICT, ex.getStatus());
+        assertEquals("IDEMPOTENCY_CONFLICT", ex.getCode());
+    }
+
+    @Test
+    void createOrderWithSameIdempotencyKeyAndIdenticalNonEmptyCartReturnsExistingOrder() {
+        Order previous = order(100L, 42L);
+        previous.setStatus(OrderStatus.WAITING_CONFIRMATION);
+        previous.setIdempotencyKey("idem-same-cart");
+        when(orders.findByIdempotencyKeyAndUserId("idem-same-cart", 42L))
+                .thenReturn(Optional.of(previous));
+        when(histories.findByOrderIdOrderByChangedAtDesc(100L)).thenReturn(List.of(
+                OrderStatusHistory.builder().id(1L).fromStatus(null).toStatus(OrderStatus.WAITING_CONFIRMATION).build()
+        ));
+        when(orderItems.findByOrderId(100L)).thenReturn(List.of(
+                OrderItem.builder().id(1L).variantId(7L).quantity(1).unitPrice(new BigDecimal("25000000")).build()
+        ));
+        when(cartService.getCart(42L)).thenReturn(new CartResponse(
+                3L,
+                List.of(new CartItemResponse(9L, 7L, "Laptop A", "SKU-7", "16GB", 1,
+                        new BigDecimal("25000000"), new BigDecimal("25000000"))),
+                1,
+                new BigDecimal("25000000")
+        ));
+
+        CreateOrderRequest request = CreateOrderRequest.builder()
+                .recipientName("Nguyen Van A")
+                .recipientPhone("0900000000")
+                .shippingAddress("Ho Chi Minh City")
+                .paymentMethod("COD")
+                .idempotencyKey("idem-same-cart")
+                .build();
+
+        var response = service.createOrder(42L, request);
+
+        assertEquals(100L, response.getId());
+        verify(cartService, never()).lockAndGetCheckoutCart(any());
+        verifyNoInteractions(catalogCheckoutService, inventoryService);
     }
 
     @Test
@@ -491,6 +633,62 @@ class OrderServiceImplTest {
         assertEquals(7L, summary.getInProgressCount());
         assertEquals(5L, summary.getDeliveredCount());
         assertEquals(new BigDecimal("125000000"), summary.getDeliveredRevenue());
+    }
+
+    @Test
+    void createOrderThrowsIdempotencyConflictWhenSaveFailsWithUserIdempotencyConstraint() {
+        when(orders.findByIdempotencyKeyAndUserId("idem-race-001", 42L)).thenReturn(Optional.empty());
+        when(cartService.lockAndGetCheckoutCart(42L)).thenReturn(new CartSnapshot(
+                3L,
+                42L,
+                List.of(new CartSnapshot.Item(9L, 7L, 1))
+        ));
+        when(catalogCheckoutService.lockAndGetSellableVariants(List.of(7L))).thenReturn(List.of(
+                new CheckoutVariantSnapshot(7L, 70L, "MacBook Air M3", "16GB - 512GB - Silver",
+                        "MBA-M3-16-512", new BigDecimal("25000000"), 5)
+        ));
+        when(orders.saveAndFlush(any(Order.class))).thenThrow(new DataIntegrityViolationException(
+                "could not execute statement [ERROR: duplicate key value violates unique constraint \"uq_orders_user_idempotency_key\"]"
+        ));
+
+        CreateOrderRequest request = CreateOrderRequest.builder()
+                .recipientName("Nguyen Van A")
+                .recipientPhone("0900000000")
+                .shippingAddress("Ho Chi Minh City")
+                .paymentMethod("COD")
+                .idempotencyKey("idem-race-001")
+                .build();
+
+        BusinessException ex = assertThrows(BusinessException.class, () -> service.createOrder(42L, request));
+        assertEquals(HttpStatus.CONFLICT, ex.getStatus());
+        assertEquals("IDEMPOTENCY_CONFLICT", ex.getCode());
+    }
+
+    @Test
+    void createOrderRethrowsNonIdempotencyDataIntegrityViolation() {
+        when(orders.findByIdempotencyKeyAndUserId("idem-other-err", 42L)).thenReturn(Optional.empty());
+        when(cartService.lockAndGetCheckoutCart(42L)).thenReturn(new CartSnapshot(
+                3L,
+                42L,
+                List.of(new CartSnapshot.Item(9L, 7L, 1))
+        ));
+        when(catalogCheckoutService.lockAndGetSellableVariants(List.of(7L))).thenReturn(List.of(
+                new CheckoutVariantSnapshot(7L, 70L, "MacBook Air M3", "16GB - 512GB - Silver",
+                        "MBA-M3-16-512", new BigDecimal("25000000"), 5)
+        ));
+        when(orders.saveAndFlush(any(Order.class))).thenThrow(new DataIntegrityViolationException(
+                "duplicate key value violates unique constraint \"uq_orders_order_code\""
+        ));
+
+        CreateOrderRequest request = CreateOrderRequest.builder()
+                .recipientName("Nguyen Van A")
+                .recipientPhone("0900000000")
+                .shippingAddress("Ho Chi Minh City")
+                .paymentMethod("COD")
+                .idempotencyKey("idem-other-err")
+                .build();
+
+        assertThrows(DataIntegrityViolationException.class, () -> service.createOrder(42L, request));
     }
 
     private Order order(Long id, Long userId) {

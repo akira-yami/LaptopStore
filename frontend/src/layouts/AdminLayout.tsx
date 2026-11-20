@@ -29,7 +29,7 @@ const adminNavigation: { label: string; links: { to: string; label: string; icon
 ];
 
 export const AdminLayout: React.FC = () => {
-  const { accountName, initials, sidebarOpen, setSidebarOpen, signOut } = useWorkspaceControls();
+  const { accountName, initials, scrolled, sidebarOpen, setSidebarOpen, signOut } = useWorkspaceControls();
 
   return (
     <div className="ops admin-workspace">
@@ -58,7 +58,7 @@ export const AdminLayout: React.FC = () => {
       <div className="mobile-backdrop" onClick={() => setSidebarOpen(false)} aria-hidden="true" />
 
       <div className="ops-shell">
-        <header className="ops-header">
+        <header className="ops-header" data-scrolled={scrolled}>
           <button type="button" className="icon-btn mobile-only" aria-label="Mở menu" aria-controls="admin-sidebar" aria-expanded={sidebarOpen} onClick={() => setSidebarOpen(true)}>
             <Icon name="menu" />
           </button>

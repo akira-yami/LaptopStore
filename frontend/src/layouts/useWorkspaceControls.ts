@@ -2,8 +2,10 @@ import { useAuth } from '@/app/providers/AuthProvider';
 import { useToast } from '@/components/ui';
 import { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
+import { useHeaderScrolled } from './useHeaderScrolled';
 
 export function useWorkspaceControls() {
+  const scrolled = useHeaderScrolled();
   const { user, logout } = useAuth();
   const toast = useToast();
   const navigate = useNavigate();
@@ -38,5 +40,5 @@ export function useWorkspaceControls() {
     }
   };
 
-  return { accountName, initials, sidebarOpen, setSidebarOpen, signOut };
+  return { accountName, initials, scrolled, sidebarOpen, setSidebarOpen, signOut };
 }

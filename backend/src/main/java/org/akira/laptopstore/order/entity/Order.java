@@ -8,7 +8,16 @@ import java.time.Instant;
 import org.akira.laptopstore.order.entity.enums.OrderStatus;
 
 @Entity
-@Table(name = "orders")
+@Table(
+        name = "orders",
+        uniqueConstraints = {
+                // Thống nhất với logic tra cứu findByIdempotencyKeyAndUserId: duy nhất theo từng user thay vì toàn hệ thống.
+                @UniqueConstraint(
+                        name = "uq_orders_user_idempotency_key",
+                        columnNames = {"user_id", "idempotency_key"}
+                )
+        }
+)
 @Getter
 @Setter
 @Builder
@@ -55,7 +64,8 @@ public class Order {
     @Column(name = "coupon_code_snapshot")
     private String couponCodeSnapshot;
 
-    @Column(name = "idempotency_key", unique = true)
+    // Không đặt unique = true đơn lẻ; phạm vi duy nhất theo cặp (user_id, idempotency_key) được khai báo ở @Table và Flyway V8.
+    @Column(name = "idempotency_key")
     private String idempotencyKey;
 
     @Column(name = "created_at", nullable = false, updatable = false)

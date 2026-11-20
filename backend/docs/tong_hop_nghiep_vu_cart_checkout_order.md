@@ -58,7 +58,7 @@ flowchart LR
 ### 2.2. Nhóm Đơn hàng (`orders`, `order_items`, `order_status_history`)
 
 - **`orders`**:
-  - Định danh & khóa duy nhất: `id`, `user_id` (`FK -> users.id`), `order_code` (**UQ**), `idempotency_key` (**UQ**).
+  - Định danh & khóa duy nhất: `id`, `user_id` (`FK -> users.id`), `order_code` (**UQ**), `UNIQUE (user_id, idempotency_key)` (cập nhật qua migration `V8__scope_order_idempotency_key_to_user.sql`, đồng bộ với `findByIdempotencyKeyAndUserId`).
   - Trạng thái & tiền tệ: `status` (`OrderStatus` lưu `STRING`), `subtotal`, `discount_amount`, `shipping_fee`, `total_amount` (`BigDecimal`).
   - Snapshot giao hàng & khuyến mãi: `recipient_name`, `recipient_phone`, `shipping_address`, `coupon_code_snapshot`.
   - Dấu thời gian: `created_at`, `updated_at`.
