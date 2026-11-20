@@ -136,8 +136,20 @@ public class ProductVariantServiceImpl implements ProductVariantService {
             throw new ResourceNotFoundException("Lỗi: Không tìm thấy Product với ID: " + productId);
         }
 
+        /*
+         * =========================================================================
+         * [TẠI SAO THAY ĐỔI & BẢN CHẤT NGHIỆP VỤ - getVariantsByProductId]:
+         * - Tại sao thay đổi: Chuyển từ `findByProductId` sang `findAllByProductIdNative`.
+         * - Giữ theo cách cũ: Do Hibernate `@SQLRestriction("active = true")` can thiệp,
+         *   các biến thể bị ngừng bán (active = false) sẽ bị ẩn hoàn toàn khỏi kết quả trả về.
+         *   Hậu quả: Quản trị viên vào trang quản trị không thấy biến thể đã tắt, không thể bật bán lại.
+         * - Xử lý theo cách mới được lợi gì:
+         *   Lấy toàn bộ biến thể kèm trường active, giúp Admin/Staff kiểm soát được toàn bộ danh mục cấu hình máy.
+         * =========================================================================
+         */
         // 2. Lấy danh sách toàn bộ Variant từ DB (kể cả active = false cho Admin quản lý)
         List<ProductVariant> variants = productVariantRepository.findAllByProductIdNative(productId);
+
 
         // 3. Map từ Entity sang DTO và trả về
         return variants.stream()

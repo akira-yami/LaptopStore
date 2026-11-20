@@ -66,6 +66,18 @@ const ScrollToTop: React.FC = () => {
   return null;
 };
 
+/*
+ * =========================================================================
+ * [TẠI SAO THAY ĐỔI & BẢN CHẤT NGHIỆP VỤ - operationPages trong AppRouter]:
+ * - Tại sao thay đổi: Đưa AdminProductPage và AdminBrandPage vào danh sách `operationPages`
+ *   và đăng ký route `/admin/brands`.
+ * - Giữ theo cách cũ: Staff không có đường dẫn `/staff/brands` hay `/staff/products` trong ca làm việc,
+ *   chỉ Admin mới có route. Khi Staff bấm vào menu sản phẩm/thương hiệu sẽ bị điều hướng ra trang 404 hoặc STAFF_HOME.
+ * - Xử lý theo cách mới được lợi gì:
+ *   Cả Admin (tại `/admin/brands`, `/admin/products`) lẫn Staff (tại `/staff/brands`, `/staff/products`)
+ *   đều có thể mở đúng màn hình quản trị phù hợp với phân quyền mới.
+ * =========================================================================
+ */
 const operationPages = [
   { path: 'products', Page: AdminProductPage },
   { path: 'brands', Page: AdminBrandPage },
@@ -75,6 +87,7 @@ const operationPages = [
   { path: 'suppliers', Page: SupplierListPage },
   { path: 'reviews', Page: StaffReviewPage },
 ];
+
 
 
 

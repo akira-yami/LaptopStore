@@ -1,4 +1,18 @@
+/**
+ * =========================================================================
+ * [TEST TỰ ĐỘNG FRONTEND - BƯỚC RED TRONG CHU KỲ TDD - AdminProductPage.test.tsx]:
+ * - Tại sao tạo file này:
+ *   Kiểm thử giao diện AdminProductPage với 2 tính năng mới:
+ *   1. Nút mở Modal quản lý cấu hình và trạng thái bán của từng Biến thể (Variants).
+ *   2. Nút mở Modal quản lý bộ sưu tập nhiều ảnh sản phẩm (Multi-Images Gallery).
+ * - Giữ theo cách cũ thì ảnh hưởng xấu gì:
+ *   Không phát hiện được lỗi render cột bảng, nút modal hoặc lỗi đồng bộ giữa state sản phẩm và danh mục con.
+ * - Xử lý theo cách mới được lợi gì:
+ *   Bảo vệ tính ổn định của toàn bộ trang quản trị sản phẩm với mock axiosClient và catalogApi đầy đủ.
+ * =========================================================================
+ */
 import { render, screen, waitFor } from '@testing-library/react';
+
 import React from 'react';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';

@@ -33,8 +33,19 @@ public interface ProductService {
 
     List<ProductImageDto> getProductImages(Long productId);
 
+    /*
+     * =========================================================================
+     * [TẠI SAO THAY ĐỔI & BẢN CHẤT NGHIỆP VỤ - updateProductImages]:
+     * - Tại sao thay đổi: Bổ sung hợp đồng nghiệp vụ cập nhật danh sách ảnh cho sản phẩm.
+     * - Giữ theo cách cũ: Hệ thống chỉ hỗ trợ đọc ảnh `getProductImages`, không có phương thức
+     *   nào cho phép cập nhật, thay đổi hoặc quản lý nhiều ảnh từ màn hình quản trị.
+     * - Xử lý theo cách mới được lợi gì:
+     *   Cho phép lưu trữ, sắp xếp, bổ sung nhiều ảnh chi tiết và tự động thiết lập ảnh đại diện isPrimary.
+     * =========================================================================
+     */
     List<ProductImageDto> updateProductImages(Long productId, List<ProductImageDto> images);
 
     ProductSpecificationDto getProductSpecification(Long productId);
+
 
 }

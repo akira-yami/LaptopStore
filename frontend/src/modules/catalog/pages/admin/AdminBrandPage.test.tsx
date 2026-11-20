@@ -1,4 +1,18 @@
+/**
+ * =========================================================================
+ * [TEST TỰ ĐỘNG FRONTEND - BƯỚC RED TRONG CHU KỲ TDD - AdminBrandPage.test.tsx]:
+ * - Tại sao tạo file này:
+ *   Kiểm thử hành vi render danh sách thương hiệu, badge trạng thái kinh doanh
+ *   và sự hiện diện của các nút Thao tác (Thêm, Sửa, Xóa).
+ * - Giữ theo cách cũ thì ảnh hưởng xấu gì:
+ *   Không có test frontend dễ dẫn đến lỗi vỡ giao diện, thiếu component context (như ToastProvider),
+ *   hoặc không hiển thị đúng danh sách dữ liệu thực tế khi backend trả về.
+ * - Xử lý theo cách mới được lợi gì:
+ *   Đảm bảo trang AdminBrandPage hoạt động trơn tru, cô lập mock API sạch sẽ và pass 100% trong CI.
+ * =========================================================================
+ */
 import { ToastProvider } from '@/components/ui';
+
 import { render, screen, waitFor } from '@testing-library/react';
 import React from 'react';
 import { MemoryRouter } from 'react-router-dom';

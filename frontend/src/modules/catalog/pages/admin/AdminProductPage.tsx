@@ -1,3 +1,24 @@
+/**
+ * =========================================================================
+ * [TRANG QUẢN TRỊ SẢN PHẨM, BIẾN THỂ & BỘ SƯU TẬP ẢNH - AdminProductPage.tsx]:
+ * 1. Tại sao thay đổi:
+ *    - Tích hợp 2 phân hệ quản lý quan trọng ngay tại giao diện sản phẩm:
+ *      + Phân hệ quản lý Biến thể (Variants): Chỉnh sửa cấu hình (RAM, SSD, màu sắc, giá bán)
+ *        và Bật/Tắt trạng thái bán (ACTIVE/INACTIVE) độc lập cho từng biến thể laptop.
+ *      + Phân hệ quản lý Bộ ảnh (Images Gallery): Thêm nhiều ảnh cho 1 sản phẩm, chọn ảnh
+ *        đại diện `isPrimary` và xóa ảnh trực quan.
+ * 2. Giữ theo cách cũ thì ảnh hưởng xấu gì:
+ *    - Trước đây chỉ thêm được 1 cấu hình đầu tiên khi tạo sản phẩm, không có cách nào sửa
+ *      biến thể hoặc bổ sung cấu hình mới từ giao diện.
+ *    - Khi một cấu hình laptop hết hàng hoặc ngừng sản xuất (ví dụ bản RAM 8GB), nếu tắt sản phẩm
+ *      thì toàn bộ các bản RAM 16GB, 32GB khác cũng bị ngừng bán theo (thiếu tính linh hoạt).
+ *    - Sản phẩm chỉ có 1 ảnh đơn điệu, khách hàng mua online không xem được chi tiết các cổng
+ *      kết nối, bàn phím và góc nghiêng của laptop.
+ * 3. Xử lý theo cách mới được lợi gì:
+ *    - Trải nghiệm quản trị toàn diện (All-in-one Admin Interface), thao tác nhanh gọn bằng Modal.
+ *    - Điều phối kinh doanh chính xác theo từng mã SKU/cấu hình máy và nâng tầm trải nghiệm thị giác.
+ * =========================================================================
+ */
 import {
     apiErrorMessage,
     Badge,
@@ -9,6 +30,7 @@ import {
     Spinner,
     useToast,
 } from '@/components/ui';
+
 import { apiClient } from '@/services/api/apiClient';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';

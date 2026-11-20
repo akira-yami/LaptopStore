@@ -1,4 +1,20 @@
+/**
+ * =========================================================================
+ * [TRANG QUẢN TRỊ THƯƠNG HIỆU - AdminBrandPage.tsx]:
+ * 1. Tại sao tạo trang này:
+ *    - Cung cấp giao diện trực quan cho Staff và Admin quản lý danh sách hãng máy tính (Apple, ASUS, Dell, HP...).
+ *    - Hỗ trợ đầy đủ các thao tác: Tra cứu danh sách, Thêm thương hiệu mới, Sửa tên/mô tả và Xóa mềm thương hiệu.
+ * 2. Giữ theo cách cũ thì ảnh hưởng xấu gì:
+ *    - Trước đây hệ thống chỉ có trang quản lý danh mục (AdminCategoryPage), không có trang quản lý thương hiệu.
+ *    - Mọi thao tác thêm/sửa thương hiệu đều phải chọc database thủ công hoặc phụ thuộc DatabaseSeeder.
+ *    - Nhân viên không thể cập nhật thông tin hãng khi tiếp nhận lô hàng máy tính mới.
+ * 3. Xử lý theo cách mới được lợi gì:
+ *    - Trải nghiệm người dùng mượt mà, đồng nhất với thiết kế của toàn bộ phân hệ quản trị (AdminUI).
+ *    - Tích hợp Modal nhập liệu có validation, thông báo Toast trực quan và Modal xác nhận xóa an toàn.
+ * =========================================================================
+ */
 import { apiErrorMessage, Badge, Icon, Modal, PageHeading, Spinner, useToast } from '@/components/ui';
+
 import React, { useEffect, useState } from 'react';
 import { brandApi } from '../../api/brandApi';
 import { Brand, CreateBrandRequest } from '../../types';

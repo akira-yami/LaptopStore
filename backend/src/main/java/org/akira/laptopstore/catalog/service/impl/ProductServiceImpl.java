@@ -217,6 +217,23 @@ public class ProductServiceImpl implements ProductService {
         return productMapper.toProductImageDtoList(productImageRepository.findByProductId(productId));
     }
 
+    /*
+     * =========================================================================
+     * [TẠI SAO THAY ĐỔI & BẢN CHẤT NGHIỆP VỤ - updateProductImages]:
+     * 1. Tại sao thay đổi:
+     *    - Cập nhật toàn bộ bộ sưu tập hình ảnh của một sản phẩm trong một Transaction nguyên tử (@Transactional).
+     *    - Đảm bảo 1 sản phẩm có thể lưu nhiều ảnh (mặt lưng, bàn phím, màn hình, cổng kết nối).
+     * 2. Giữ theo cách cũ thì ảnh hưởng xấu gì:
+     *    - Thiếu logic đồng bộ nguyên tử: nếu chỉ thêm mới mà không dọn dẹp hoặc không kiểm soát `isPrimary`,
+     *      dữ liệu ảnh sẽ bị phân mảnh, có thể xảy ra trường hợp nhiều ảnh cùng là `isPrimary = true`
+     *      hoặc không có ảnh nào là đại diện, làm vỡ giao diện ProductCard ngoài cửa hàng.
+     * 3. Xử lý theo cách mới được lợi gì:
+     *    - Bước 1: Xóa sạch bộ ảnh cũ của sản phẩm đó.
+     *    - Bước 2: Lưu danh sách ảnh mới, chỉ cho phép DUY NHẤT một ảnh có `isPrimary = true`.
+     *    - Fallback thông minh: Nếu admin quên chọn ảnh chính, tự động lấy ảnh đầu tiên làm `isPrimary = true`.
+     *    - Dữ liệu luôn nhất quán, sạch sẽ và trả về danh sách DTO đã được chuẩn hóa.
+     * =========================================================================
+     */
     @Override
     @Transactional
     public List<ProductImageDto> updateProductImages(Long productId, List<ProductImageDto> imageDtos) {
@@ -257,6 +274,7 @@ public class ProductServiceImpl implements ProductService {
 
         return productMapper.toProductImageDtoList(productImageRepository.findByProductId(productId));
     }
+
 
 
     @Override

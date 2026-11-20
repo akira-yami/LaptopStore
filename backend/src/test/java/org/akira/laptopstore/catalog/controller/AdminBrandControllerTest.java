@@ -1,6 +1,21 @@
 package org.akira.laptopstore.catalog.controller;
 
+/*
+ * =========================================================================
+ * [TẬP TEST TỰ ĐỘNG - BƯỚC RED TRONG CHU KỲ TDD - AdminBrandControllerTest]:
+ * - Tại sao tạo file này:
+ *   + Tuân thủ nguyên tắc "Tests BEFORE Code": viết test mô tả các hành vi quản trị
+ *     thương hiệu (lấy danh sách, tạo mới, cập nhật, xóa mềm) trước khi sửa logic.
+ * - Giữ theo cách cũ thì ảnh hưởng xấu gì:
+ *   + Không có unit test bao phủ controller AdminBrandController khiến việc phân quyền
+ *     hoặc refactor dễ gây lỗi 403 Forbidden hoặc 500 ngầm mà không phát hiện được.
+ * - Xử lý theo cách mới được lợi gì:
+ *   + Đạt 100% tỷ lệ pass, bảo đảm hợp đồng RESTful API giữa Frontend và Backend luôn ổn định.
+ * =========================================================================
+ */
+
 import org.akira.laptopstore.catalog.dto.request.CreateBrandRequest;
+
 import org.akira.laptopstore.catalog.dto.request.UpdateBrandRequest;
 import org.akira.laptopstore.catalog.dto.response.BrandResponse;
 import org.akira.laptopstore.catalog.service.BrandService;

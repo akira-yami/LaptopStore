@@ -73,6 +73,21 @@ public class SecurityConfig {
                         .requestMatchers("/error").permitAll()
                         // Staff endpoints
                         .requestMatchers("/api/v1/staff/**").hasAnyRole("STAFF", "ADMIN")
+                        /*
+                         * =========================================================================
+                         * [TẠI SAO THAY ĐỔI & BẢN CHẤT NGHIỆP VỤ]:
+                         * - Lý do thay đổi: Mở quyền truy cập các endpoint catalog quản trị (products, brands, categories)
+                         *   cho cả tài khoản nhân viên (STAFF) lẫn quản trị viên (ADMIN).
+                         * - Nếu giữ theo cách cũ (chỉ có dòng hasRole("ADMIN") bên dưới):
+                         *   Tài khoản STAFF khi đăng nhập vào ca làm việc để quản lý danh mục, thêm/sửa hãng máy
+                         *   hoặc cấu hình hình ảnh/biến thể laptop sẽ bị chặn với mã lỗi HTTP 403 Forbidden.
+                         * - Xử lý theo cách mới được lợi gì:
+                         *   + Cho phép nhân viên vận hành cửa hàng tham gia quản lý thương hiệu và sản phẩm trực tiếp.
+                         *   + Quy tắc match URL theo thứ tự từ trên xuống: dòng này đón trước `/api/v1/admin/products/**`,
+                         *     `/brands/**`, `/categories/**` cho STAFF & ADMIN, trong khi các endpoint nhạy cảm khác
+                         *     của admin (như quản lý user/phân quyền) ở dòng dưới vẫn được bảo vệ nghiêm ngặt chỉ cho ADMIN.
+                         * =========================================================================
+                         */
                         // Admin & Staff catalog management endpoints
                         .requestMatchers("/api/v1/admin/products/**", "/api/v1/admin/brands/**", "/api/v1/admin/categories/**").hasAnyRole("STAFF", "ADMIN")
                         // Admin endpoints

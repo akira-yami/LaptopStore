@@ -1,6 +1,21 @@
 package org.akira.laptopstore.catalog.controller;
 
+/*
+ * =========================================================================
+ * [TẬP TEST TỰ ĐỘNG - BƯỚC RED TRONG CHU KỲ TDD - AdminProductVariantAndImageTest]:
+ * - Tại sao tạo file này:
+ *   + Kiểm thử chuyên sâu 2 tính năng quan trọng: chỉnh sửa biến thể/trạng thái bán của variant
+ *     và cập nhật bộ sưu tập nhiều ảnh cho sản phẩm.
+ * - Giữ theo cách cũ thì ảnh hưởng xấu gì:
+ *   + Không kiểm thử tự động việc bật/tắt bán variant hay gán ảnh chính `isPrimary`
+ *     dễ dẫn đến lỗi biên dữ liệu: biến thể ngừng bán vẫn cho checkout, hoặc sản phẩm mất ảnh đại diện.
+ * - Xử lý theo cách mới được lợi gì:
+ *   + Chứng minh mã xử lý đạt chuẩn TDD (RED -> GREEN), kiểm soát chặt chẽ từng trường dữ liệu trả về.
+ * =========================================================================
+ */
+
 import org.akira.laptopstore.catalog.dto.request.CreateVariantRequest;
+
 import org.akira.laptopstore.catalog.dto.request.UpdateVariantRequest;
 import org.akira.laptopstore.catalog.dto.response.ProductImageDto;
 import org.akira.laptopstore.catalog.dto.response.VariantSnapshot;

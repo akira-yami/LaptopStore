@@ -52,8 +52,13 @@ export interface VariantSnapshot {
   price: number;
   quantity: number;
   status: string;
+  /**
+   * Trạng thái kinh doanh của biến thể (true: Đang bán, false: Ngừng bán).
+   * Thêm trường này giúp giao diện quản lý phân biệt rõ tình trạng từng cấu hình máy.
+   */
   active?: boolean;
 }
+
 
 
 export interface ProductSpecificationDto {

@@ -23,11 +23,27 @@ import org.akira.laptopstore.catalog.mapper.ProductMapper;
 
 import java.util.List;
 
+/*
+ * =========================================================================
+ * [TẠI SAO THAY ĐỔI & BẢN CHẤT NGHIỆP VỤ - AdminProductController]:
+ * 1. Tại sao thay đổi:
+ *    - Phân quyền @PreAuthorize("hasAnyRole('STAFF', 'ADMIN')") để nhân viên bán hàng / thủ kho
+ *      có thể cùng tham gia quản trị thông tin cấu hình sản phẩm và tình trạng tồn/bán.
+ *    - Bổ sung endpoint PUT `/{productId}/images` hỗ trợ lưu bộ sưu tập nhiều ảnh cho 1 sản phẩm.
+ * 2. Giữ theo cách cũ thì ảnh hưởng xấu gì:
+ *    - Cách cũ khóa cứng hasRole('ADMIN'), nhân viên Staff không thể hỗ trợ cập nhật cấu hình hoặc hình ảnh.
+ *    - Trước đây không có API cập nhật danh sách ảnh cho sản phẩm đã tồn tại, dẫn đến việc sản phẩm
+ *      chỉ có 1 ảnh thumbnail hoặc không thể bổ sung ảnh góc cạnh/chi tiết laptop từ trang quản trị.
+ * 3. Xử lý theo cách mới được lợi gì:
+ *    - Quản lý tập trung sản phẩm, biến thể (variant) và bộ ảnh đa góc nhìn (gallery) qua RESTful API chuẩn.
+ * =========================================================================
+ */
 @RestController
 @RequestMapping("/api/v1/admin/products")
 @RequiredArgsConstructor
 @PreAuthorize("hasAnyRole('STAFF', 'ADMIN')")
 public class AdminProductController {
+
 
 
     private final ProductService productService;
@@ -135,6 +151,11 @@ public class AdminProductController {
         return ResponseEntity.ok(response);
     }
 
+    // ==========================================
+    // QUẢN LÝ BỘ SƯU TẬP HÌNH ẢNH SẢN PHẨM (MULTI-IMAGE MANAGEMENT)
+    // - Cho phép lưu trữ và cập nhật nhiều ảnh cho một sản phẩm (mặt trước, bàn phím, cổng kết nối).
+    // - Tự động thiết lập ảnh đại diện isPrimary và bảo đảm tính nhất quán nguyên tử.
+    // ==========================================
     @PutMapping("/{productId}/images")
     public ResponseEntity<List<ProductImageDto>> updateProductImages(
             @PathVariable Long productId,
@@ -143,4 +164,5 @@ public class AdminProductController {
         List<ProductImageDto> response = productService.updateProductImages(productId, images);
         return ResponseEntity.ok(response);
     }
+
 }

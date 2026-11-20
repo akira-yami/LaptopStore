@@ -26,8 +26,13 @@ export interface VariantSnapshot {
     price: number;
     quantity: number;
     status: string;
+    /**
+     * Trạng thái kinh doanh của biến thể (true: Đang bán, false: Ngừng bán).
+     * Bổ sung để hỗ trợ hiển thị Badge và nút gạt trạng thái trong AdminProductPage.
+     */
     active?: boolean;
 }
+
 
 
 export interface ProductSummaryResponse {

@@ -7,9 +7,15 @@ import { useWorkspaceControls } from './useWorkspaceControls';
 
 const staffNavigation: { to: string; label: string; icon: IconName }[] = [
   { to: STAFF_HOME, label: 'Ca làm việc', icon: 'grid' },
+  /*
+   * [TẠI SAO THAY ĐỔI]: Cung cấp lối tắt truy cập nhanh danh mục Sản phẩm và Thương hiệu
+   * ngay trên thanh điều hướng của nhân viên (Staff). Cách cũ Staff không có menu này
+   * khiến việc tra cứu hoặc hỗ trợ cập nhật dữ liệu máy tính bị cô lập.
+   */
   { to: '/staff/products', label: 'Sản phẩm', icon: 'laptop' },
   { to: '/staff/brands', label: 'Thương hiệu', icon: 'shield' },
   { to: '/staff/orders', label: 'Xử lý đơn hàng', icon: 'orders' },
+
   { to: '/staff/inventory', label: 'Kho hàng', icon: 'box' },
   { to: '/staff/procurement', label: 'Nhận hàng', icon: 'truck' },
   { to: '/staff/suppliers', label: 'Nhà cung cấp', icon: 'users' },
