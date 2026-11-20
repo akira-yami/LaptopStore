@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 import { createInitialMockState, setupMockBackend } from './helpers/mockBackend';
 
 test.describe('Luồng mua hàng E2E của Khách hàng (Customer)', () => {
-  test('Đăng nhập → Giỏ hàng → Preview Coupon → Đặt đơn COD → Hủy đơn trên Chi tiết đơn', async ({ page }) => {
+  test('Đăng nhập → Giỏ hàng → Preview Coupon → Đặt đơn COD → Gửi yêu cầu hủy', async ({ page }) => {
     const state = createInitialMockState();
     await setupMockBackend(page, state);
 
@@ -29,13 +29,18 @@ test.describe('Luồng mua hàng E2E của Khách hàng (Customer)', () => {
     await expect(page).toHaveURL(/\/orders\/300$/);
     await expect(page.getByText(/Đơn #ORD-E2E-300/i)).toBeVisible();
 
-    // 5. Khách hàng bấm Hủy đơn hàng
-    await page.getByRole('button', { name: 'Hủy đơn hàng' }).click();
+    // 5. Khách hàng gửi yêu cầu hủy để nhân viên duyệt
+    await page.getByRole('button', { name: 'Yêu cầu hủy đơn hàng' }).click();
     await page.getByPlaceholder(/Đổi cấu hình/i).fill('Muốn nâng cấp bản 1TB');
-    await page.getByRole('button', { name: 'Xác nhận hủy đơn' }).click();
+    await page.getByRole('button', { name: 'Gửi yêu cầu hủy' }).click();
 
-    await expect(page.getByText(/Đã hủy đơn hàng #ORD-E2E-300/i)).toBeVisible();
-    expect(state.orders.find((o) => o.id === 300)?.status).toBe('CANCELLED');
+    const cancellationNotice = page.getByRole('status').filter({ hasText: 'Yêu cầu hủy đơn hàng đang chờ duyệt' });
+    await expect(cancellationNotice).toContainText('Muốn nâng cấp bản 1TB');
+    await expect(page.getByRole('button', { name: 'Yêu cầu hủy đơn hàng' })).toHaveCount(0);
+    expect(state.orders.find((o) => o.id === 300)).toMatchObject({
+      status: 'WAITING_CONFIRMATION',
+      cancellationRequestReason: 'Muốn nâng cấp bản 1TB',
+    });
   });
 
   test('Đặt đơn VNPAY → Redirect sang cổng VNPay → Xác minh trang /payment/vnpay-return', async ({ page }) => {

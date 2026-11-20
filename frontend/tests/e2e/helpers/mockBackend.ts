@@ -19,6 +19,8 @@ interface MockOrder {
   userId: number;
   orderCode: string;
   status: string;
+  paymentMethod?: 'COD' | 'VNPAY';
+  cancellationRequestReason?: string | null;
   totalItems: number;
   subtotal: number;
   discountAmount: number;
@@ -178,6 +180,7 @@ export function createInitialMockState(): MockBackendState {
         userId: 42,
         orderCode: 'ORD-COD-202',
         status: 'WAITING_CONFIRMATION',
+        paymentMethod: 'COD',
         totalItems: 1,
         subtotal: 22000000,
         discountAmount: 0,
@@ -469,6 +472,7 @@ export async function setupMockBackend(page: Page, state: MockBackendState = cre
         userId: state.currentUser?.id ?? 42,
         orderCode: `ORD-E2E-${orderId}`,
         status,
+        paymentMethod: body.paymentMethod ?? 'COD',
         totalItems: state.cartItems.reduce((sum, i) => sum + i.quantity, 0),
         subtotal,
         discountAmount,
@@ -522,11 +526,20 @@ export async function setupMockBackend(page: Page, state: MockBackendState = cre
     if (cancelOrderMatch && method === 'POST') {
       const order = state.orders.find((o) => o.id === Number(cancelOrderMatch[1]));
       if (!order) return json(route, { message: 'Order not found' }, 404);
+      if (order.paymentMethod === 'COD') {
+        if (!['WAITING_CONFIRMATION', 'CONFIRMED', 'PACKING'].includes(order.status)) {
+          return json(route, { message: 'Đơn COD không ở trạng thái có thể yêu cầu hủy' }, 400);
+        }
+        order.cancellationRequestReason ??= url.searchParams.get('reason')?.trim() || 'Khách hàng yêu cầu hủy';
+        order.updatedAt = new Date().toISOString();
+        return json(route, order);
+      }
+      const previousStatus = order.status;
       order.status = 'CANCELLED';
       order.updatedAt = new Date().toISOString();
       order.statusHistories.unshift({
         id: Date.now(),
-        fromStatus: 'WAITING_CONFIRMATION',
+        fromStatus: previousStatus,
         toStatus: 'CANCELLED',
         changedAt: order.updatedAt,
         changedBy: 42,

@@ -494,7 +494,7 @@ public class OrderServiceImpl implements OrderService, OrderRefundService {
 
         OrderStateMachine.validateTransition(currentStatus, targetStatus, true, deliveryAttempts);
 
-        order.setCancellationRequestReason(cancellationReason);
+        order.setCancellationRequestReason(null);
         recordStatusChange(order, targetStatus, actorId,
                 cancellationReason != null ? cancellationReason : checkoutSupport.normalize(request.getNote()));
 
