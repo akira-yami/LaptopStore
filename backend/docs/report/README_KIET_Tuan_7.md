@@ -1,8 +1,8 @@
 # BIÊN BẢN BÀN GIAO TÍNH NĂNG: TÍCH HỢP HỆ THỐNG SPRING EMAIL CHO TOÀN DỰ ÁN LAPTOPSTORE
 
-**Người thực hiện:** Autonomous Senior Full-Stack J2EE Software Engineer  
-**Nhánh làm việc:** `kiet-Catalog-Inventory-Procurement`  
-**Ngày hoàn thành:** 21/11/2026  
+**Người thực hiện:** `Kiệt`
+**Nhánh làm việc:** `kiet-Catalog-Inventory-Procurement`
+**Ngày hoàn thành:** 21/11/2026
 **Trạng thái nghiệm thu:** ĐÃ HOÀN THÀNH TOÀN BỘ (All Tests & Architecture Checks Passed 100%)
 
 ---
