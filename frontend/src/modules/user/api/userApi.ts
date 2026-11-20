@@ -1,5 +1,13 @@
 import { apiClient } from '@/services/api/apiClient';
-import { Address, CreateAddressRequest, UpdateProfileRequest, UserProfile } from '../types';
+import {
+  Address,
+  AvailableCoupon,
+  CreateAddressRequest,
+  LoyaltyOverview,
+  LoyaltyRedeemResponse,
+  UpdateProfileRequest,
+  UserProfile,
+} from '../types';
 
 export const userApi = {
   getProfile: async (): Promise<UserProfile> => {
@@ -24,6 +32,21 @@ export const userApi = {
 
   deleteAddress: async (id: number): Promise<void> => {
     await apiClient.delete(`/me/addresses/${id}`);
+  },
+
+  getLoyaltyOverview: async (): Promise<LoyaltyOverview> => {
+    const response = await apiClient.get<LoyaltyOverview>('/me/loyalty');
+    return response.data;
+  },
+
+  redeemLoyaltyCoupon: async (tierCode: string): Promise<LoyaltyRedeemResponse> => {
+    const response = await apiClient.post<LoyaltyRedeemResponse>('/me/loyalty/redeem', { tierCode });
+    return response.data;
+  },
+
+  getAvailableCoupons: async (): Promise<AvailableCoupon[]> => {
+    const response = await apiClient.get<AvailableCoupon[]>('/me/coupons/available');
+    return response.data;
   },
 };
 

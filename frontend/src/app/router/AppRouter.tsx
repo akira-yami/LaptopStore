@@ -22,6 +22,7 @@ import ProductListPage from '@/modules/catalog/pages/user/ProductListPage';
 import { LoginPage } from '@/modules/auth/pages/LoginPage';
 import { RegisterPage } from '@/modules/auth/pages/RegisterPage';
 import { AdminUserListPage } from '@/modules/user/pages/admin/AdminUserListPage';
+import { LoyaltyPage } from '@/modules/user/pages/LoyaltyPage';
 import { ProfilePage } from '@/modules/user/pages/ProfilePage';
 
 // Payment
@@ -105,6 +106,7 @@ export const AppRouter: React.FC = () => (
             <Route element={<ProtectedRoute />}>
               <Route path="/profile" element={<ProfilePage />} />
               <Route path="/me/addresses" element={<ProfilePage />} />
+              <Route path="/me/loyalty" element={<LoyaltyPage />} />
               <Route path="/cart" element={<CartPage />} />
               <Route path="/checkout" element={<CheckoutPage />} />
               <Route path="/orders" element={<OrderHistoryPage />} />

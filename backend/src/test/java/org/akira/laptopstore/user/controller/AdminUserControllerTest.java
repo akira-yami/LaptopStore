@@ -1,6 +1,7 @@
 package org.akira.laptopstore.user.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.akira.laptopstore.exception.BusinessException;
 import org.akira.laptopstore.security.CustomAccessDeniedHandler;
 import org.akira.laptopstore.security.JwtAuthenticationEntryPoint;
 import org.akira.laptopstore.security.SecurityConfig;
@@ -8,6 +9,7 @@ import org.akira.laptopstore.security.filter.JwtAuthenticationFilter;
 import org.akira.laptopstore.security.jwt.JwtTokenProvider;
 import org.akira.laptopstore.security.principal.CustomUserDetails;
 import org.akira.laptopstore.security.principal.CustomUserDetailsService;
+import org.akira.laptopstore.user.dto.ChangeUserRolesRequest;
 import org.akira.laptopstore.user.dto.ChangeUserStatusRequest;
 import org.akira.laptopstore.user.dto.UserProfileResponse;
 import org.akira.laptopstore.user.service.UserService;
@@ -16,6 +18,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
@@ -125,7 +128,7 @@ class AdminUserControllerTest {
                 .createdAt(Instant.now())
                 .build();
 
-        when(userService.updateUserStatus(eq(2L), any(ChangeUserStatusRequest.class))).thenReturn(updatedUser);
+        when(userService.updateUserStatus(eq(1L), eq(2L), any(ChangeUserStatusRequest.class))).thenReturn(updatedUser);
 
         mockMvc.perform(patch("/api/v1/admin/users/2/status")
                         .with(user(adminPrincipal))
@@ -134,6 +137,46 @@ class AdminUserControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("SUSPENDED"));
 
-        verify(userService).updateUserStatus(eq(2L), any(ChangeUserStatusRequest.class));
+        verify(userService).updateUserStatus(eq(1L), eq(2L), any(ChangeUserStatusRequest.class));
+    }
+
+    @Test
+    @DisplayName("PATCH /api/v1/admin/users/{id}/roles - Truyền actorId từ principal và trả về 403 khi service từ chối")
+    void updateUserRoles_whenServiceThrowsForbidden_returns403() throws Exception {
+        CustomUserDetails adminPrincipal = createPrincipal(1L, "ROLE_ADMIN");
+        ChangeUserRolesRequest request = new ChangeUserRolesRequest();
+        request.setRoles(Set.of("ROLE_USER"));
+
+        when(userService.updateUserRoles(eq(1L), eq(2L), any(ChangeUserRolesRequest.class)))
+                .thenThrow(new BusinessException(
+                        HttpStatus.FORBIDDEN,
+                        "FORBIDDEN_ROLE_OPERATION",
+                        "Không có quyền thay đổi vai trò của tài khoản có vai trò ngang cấp hoặc cao hơn"
+                ));
+
+        mockMvc.perform(patch("/api/v1/admin/users/2/roles")
+                        .with(user(adminPrincipal))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("FORBIDDEN_ROLE_OPERATION"));
+
+        verify(userService).updateUserRoles(eq(1L), eq(2L), any(ChangeUserRolesRequest.class));
+    }
+
+    @Test
+    @DisplayName("PATCH /api/v1/admin/users/{id}/roles - ROLE_STAFF bị chặn 403 Forbidden")
+    void updateUserRoles_asStaff_returns403() throws Exception {
+        CustomUserDetails staffPrincipal = createPrincipal(50L, "ROLE_STAFF");
+        ChangeUserRolesRequest request = new ChangeUserRolesRequest();
+        request.setRoles(Set.of("ROLE_USER"));
+
+        mockMvc.perform(patch("/api/v1/admin/users/2/roles")
+                        .with(user(staffPrincipal))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isForbidden());
+
+        verifyNoInteractions(userService);
     }
 }

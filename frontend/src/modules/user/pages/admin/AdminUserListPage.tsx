@@ -1,3 +1,4 @@
+import { useAuth } from '@/app/providers/AuthProvider';
 import { apiErrorMessage, Badge, formatDateTime, Icon, Modal, PageHeading, Spinner, useToast } from '@/components/ui';
 import { ROLES } from '@/constants/roles';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
@@ -9,6 +10,17 @@ const ALL_ROLES = [
   { value: ROLES.STAFF, label: 'Nhân viên (ROLE_STAFF)' },
   { value: ROLES.ADMIN, label: 'Quản trị viên (ROLE_ADMIN)' },
 ];
+
+const ROLE_RANK: Record<string, number> = {
+  [ROLES.USER]: 1,
+  [ROLES.STAFF]: 2,
+  [ROLES.ADMIN]: 3,
+};
+
+const getMaxRoleRank = (roles?: string[]): number => {
+  if (!roles || roles.length === 0) return 0;
+  return roles.reduce((max, r) => Math.max(max, ROLE_RANK[r] ?? Number.MAX_SAFE_INTEGER), 0);
+};
 
 const STATUS_FILTERS = [
   { value: '', label: 'Tất cả' },
@@ -24,6 +36,7 @@ const roleLabel = (role: string) => {
 };
 
 export const AdminUserListPage: React.FC = () => {
+  const { user: currentUser } = useAuth();
   const toast = useToast();
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [loading, setLoading] = useState(true);
@@ -36,6 +49,16 @@ export const AdminUserListPage: React.FC = () => {
   const [selectedRoles, setSelectedRoles] = useState<string[]>([]);
   const [savingRoles, setSavingRoles] = useState(false);
   const [togglingId, setTogglingId] = useState<number | null>(null);
+
+  const actorMaxRank = useMemo(() => getMaxRoleRank(currentUser?.roles), [currentUser?.roles]);
+
+  const canManageUser = useCallback(
+    (target: UserProfile) => {
+      if (!currentUser || currentUser.id === target.id) return false;
+      return getMaxRoleRank(target.roles) < actorMaxRank;
+    },
+    [currentUser, actorMaxRank],
+  );
 
   const loadUsers = useCallback(async () => {
     try {
@@ -67,6 +90,10 @@ export const AdminUserListPage: React.FC = () => {
   }, [users, keyword, statusFilter, roleFilter]);
 
   const handleToggleStatus = async (user: UserProfile) => {
+    if (!canManageUser(user)) {
+      toast('Không thể tự khóa hoặc thao tác với tài khoản ngang cấp/cao hơn.', { tone: 'error' });
+      return;
+    }
     const nextStatus = user.status === 'ACTIVE' ? 'LOCKED' : 'ACTIVE';
     const actionLabel = nextStatus === 'LOCKED' ? 'khóa' : 'mở khóa';
     if (!window.confirm(`Xác nhận ${actionLabel} tài khoản ${user.email}? Phiên đăng nhập hiện tại của tài khoản này sẽ bị thu hồi.`)) {
@@ -85,6 +112,10 @@ export const AdminUserListPage: React.FC = () => {
   };
 
   const openRoleModal = (user: UserProfile) => {
+    if (!canManageUser(user)) {
+      toast('Không thể tự phân quyền hoặc thay đổi vai trò tài khoản ngang cấp/cao hơn.', { tone: 'error' });
+      return;
+    }
     setRoleTarget(user);
     setSelectedRoles([...user.roles]);
   };
@@ -182,10 +213,18 @@ export const AdminUserListPage: React.FC = () => {
                 <tr><td colSpan={6} className="table-empty">Không có người dùng nào phù hợp bộ lọc.</td></tr>
               ) : visible.map((u) => {
                 const isActive = u.status === 'ACTIVE';
+                const isSelf = currentUser?.id === u.id;
+                const manageable = canManageUser(u);
+                const disabledReason = isSelf
+                  ? 'Không thể tự phân quyền hoặc tự khóa tài khoản của chính mình'
+                  : 'Role ngang cấp hoặc thấp hơn không có quyền thay đổi tài khoản này';
                 return (
                   <tr key={u.id}>
                     <td>
-                      <div className="primary-cell">{u.fullName || 'Chưa cập nhật tên'}</div>
+                      <div className="row wrap" style={{ gap: 6 }}>
+                        <span className="primary-cell">{u.fullName || 'Chưa cập nhật tên'}</span>
+                        {isSelf && <Badge tone="blue">Bạn</Badge>}
+                      </div>
                       <div className="subcell">{u.email}</div>
                     </td>
                     <td>{u.phone || '—'}</td>
@@ -206,13 +245,20 @@ export const AdminUserListPage: React.FC = () => {
                     <td className="small muted">{formatDateTime(u.createdAt)}</td>
                     <td>
                       <div className="row" style={{ justifyContent: 'flex-end', gap: 8 }}>
-                        <button type="button" className="btn sm" onClick={() => openRoleModal(u)}>
+                        <button
+                          type="button"
+                          className="btn sm"
+                          disabled={!manageable}
+                          title={!manageable ? disabledReason : undefined}
+                          onClick={() => openRoleModal(u)}
+                        >
                           Phân quyền
                         </button>
                         <button
                           type="button"
                           className={`btn sm ${isActive ? 'danger' : 'soft'}`}
-                          disabled={togglingId === u.id}
+                          disabled={!manageable || togglingId === u.id}
+                          title={!manageable ? disabledReason : undefined}
                           onClick={() => void handleToggleStatus(u)}
                         >
                           {togglingId === u.id ? 'Đang lưu...' : isActive ? 'Khóa' : 'Mở khóa'}
@@ -244,7 +290,7 @@ export const AdminUserListPage: React.FC = () => {
           Chọn các vai trò áp dụng cho tài khoản này. Sau khi lưu, phiên đăng nhập cũ sẽ hết hiệu lực để áp dụng quyền mới ngay lập tức.
         </p>
         <div className="stack" style={{ gap: 10 }}>
-          {ALL_ROLES.map((r) => (
+          {ALL_ROLES.filter((r) => (ROLE_RANK[r.value] ?? 0) <= actorMaxRank).map((r) => (
             <label key={r.value} className="row" style={{ gap: 10, cursor: 'pointer' }}>
               <input
                 type="checkbox"

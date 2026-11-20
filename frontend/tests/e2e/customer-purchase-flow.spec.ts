@@ -74,4 +74,20 @@ test.describe('Luồng mua hàng E2E của Khách hàng (Customer)', () => {
     expect(state.reviews).toHaveLength(1);
     expect(state.reviews[0].rating).toBe(5);
   });
+
+  test('Quản lý Loyalty & Coupon (/me/loyalty) → Xem điểm thưởng → Đổi điểm sang Coupon → Hiển thị ở Coupon có thể dùng', async ({ page }) => {
+    const state = createInitialMockState();
+    state.currentUser = state.users[0];
+    await setupMockBackend(page, state);
+
+    await page.goto('/me/loyalty');
+    await expect(page.getByRole('heading', { name: 'Điểm thưởng Loyalty & Coupon' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: '300 điểm' })).toBeVisible();
+    await expect(page.getByText('STUDENT500')).toBeVisible();
+
+    await page.getByTestId('redeem-tier-COUPON_120K').click();
+
+    await expect(page.getByRole('heading', { name: '200 điểm' })).toBeVisible();
+    await expect(page.getByText('LYL100-E2E999', { exact: true })).toBeVisible();
+  });
 });

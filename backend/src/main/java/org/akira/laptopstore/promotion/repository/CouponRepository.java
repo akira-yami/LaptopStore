@@ -7,6 +7,7 @@ import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+import java.util.List;
 import java.util.Optional;
 
 public interface CouponRepository
@@ -15,6 +16,15 @@ public interface CouponRepository
     Optional<Coupon> findByCodeIgnoreCase(String code);
 
     boolean existsByCodeIgnoreCase(String code);
+
+    @Query("""
+            select c
+            from Coupon c
+            where c.active = true
+              and (c.ownerUserId is null or c.ownerUserId = :userId)
+            order by c.createdAt desc, c.id desc
+            """)
+    List<Coupon> findActiveCandidatesForUser(@Param("userId") Long userId);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("""

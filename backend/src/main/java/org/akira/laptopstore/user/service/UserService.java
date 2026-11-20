@@ -11,6 +11,6 @@ public interface UserService {
     UserProfileResponse getProfile(Long userId);
     UserProfileResponse updateProfile(Long userId, UpdateProfileRequest request);
     List<UserProfileResponse> getAllUsers();
-    UserProfileResponse updateUserStatus(Long userId, ChangeUserStatusRequest request);
-    UserProfileResponse updateUserRoles(Long userId, ChangeUserRolesRequest request);
+    UserProfileResponse updateUserStatus(Long actorId, Long userId, ChangeUserStatusRequest request);
+    UserProfileResponse updateUserRoles(Long actorId, Long userId, ChangeUserRolesRequest request);
 }

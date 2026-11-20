@@ -48,6 +48,15 @@ test.describe('Luồng vận hành E2E của Staff / Admin', () => {
     // 1. Phân quyền người dùng trên /admin/users
     await page.goto('/admin/users');
     await expect(page.getByText('Quản lý người dùng')).toBeVisible();
+
+    // Chính mình & Admin ngang cấp không thể phân quyền hoặc khóa lẫn nhau
+    const selfAdminRow = page.locator('tr', { hasText: 'admin@laptopstore.vn' });
+    await expect(selfAdminRow.getByRole('button', { name: 'Phân quyền' })).toBeDisabled();
+    await expect(selfAdminRow.getByRole('button', { name: 'Khóa' })).toBeDisabled();
+    const peerAdminRow = page.locator('tr', { hasText: 'admin2@laptopstore.vn' });
+    await expect(peerAdminRow.getByRole('button', { name: 'Phân quyền' })).toBeDisabled();
+    await expect(peerAdminRow.getByRole('button', { name: 'Khóa' })).toBeDisabled();
+
     const customerRow = page.locator('tr', { hasText: 'customer@laptopstore.vn' });
     await customerRow.getByRole('button', { name: 'Phân quyền' }).click();
     await page.getByLabel(/Nhân viên \(ROLE_STAFF\)/i).check();

@@ -270,6 +270,15 @@ export function createInitialMockState(): MockBackendState {
         roles: ['ROLE_ADMIN'],
         createdAt: now,
       },
+      {
+        id: 100,
+        email: 'admin2@laptopstore.vn',
+        fullName: 'Quản Trị Viên 2',
+        phone: '0908888888',
+        status: 'ACTIVE',
+        roles: ['ROLE_ADMIN'],
+        createdAt: now,
+      },
     ],
     coupons: [
       {
@@ -346,6 +355,9 @@ export async function setupMockBackend(page: Page, state: MockBackendState = cre
     }
 
     // Admin Users
+    const rankOf = (roles: MockRole[]) =>
+      roles.reduce((max, r) => Math.max(max, r === 'ROLE_ADMIN' ? 3 : r === 'ROLE_STAFF' ? 2 : 1), 0);
+
     if (path === '/admin/users' && method === 'GET') {
       return json(route, state.users);
     }
@@ -355,6 +367,10 @@ export async function setupMockBackend(page: Page, state: MockBackendState = cre
       const body = req.postDataJSON() as { status: string };
       const user = state.users.find((u) => u.id === id);
       if (!user) return json(route, { message: 'Not found' }, 404);
+      const actorRank = state.currentUser ? rankOf(state.currentUser.roles) : 0;
+      if (!state.currentUser || state.currentUser.id === id || rankOf(user.roles) >= actorRank) {
+        return json(route, { message: 'Role ngang cấp hoặc thấp hơn không có quyền thay đổi tài khoản này' }, 403);
+      }
       user.status = body.status;
       return json(route, user);
     }
@@ -364,6 +380,10 @@ export async function setupMockBackend(page: Page, state: MockBackendState = cre
       const body = req.postDataJSON() as { roles: MockRole[] };
       const user = state.users.find((u) => u.id === id);
       if (!user) return json(route, { message: 'Not found' }, 404);
+      const actorRank = state.currentUser ? rankOf(state.currentUser.roles) : 0;
+      if (!state.currentUser || state.currentUser.id === id || rankOf(user.roles) >= actorRank) {
+        return json(route, { message: 'Role ngang cấp hoặc thấp hơn không có quyền thay đổi tài khoản này' }, 403);
+      }
       user.roles = body.roles;
       return json(route, user);
     }
@@ -646,6 +666,125 @@ export async function setupMockBackend(page: Page, state: MockBackendState = cre
       return json(route, created, 201);
     }
     if (path === '/admin/coupon-usages' && method === 'GET') return json(route, []);
+
+    if (path === '/me/coupons/available' && method === 'GET') {
+      return json(
+        route,
+        state.coupons.filter((c) => c.active).map((c) => ({
+          ...c,
+          remainingTotalUses: c.usageLimit ?? 1,
+          remainingUserUses: c.usagePerUser ?? 1,
+          personal: c.code.startsWith('LYL'),
+        })),
+      );
+    }
+
+    if (path === '/me/loyalty' && method === 'GET') {
+      const pointsBalance = (state as unknown as { loyaltyBalance?: number }).loyaltyBalance ?? 300;
+      const totalRedeemed = (state as unknown as { loyaltyRedeemed?: number }).loyaltyRedeemed ?? 0;
+      return json(route, {
+        pointsBalance,
+        totalEarned: 300,
+        totalRedeemed,
+        vndPerPoint: 100000,
+        rewardTiers: [
+          {
+            tierCode: 'COUPON_50K',
+            title: 'Voucher giảm 50.000 ₫',
+            pointsCost: 50,
+            discountType: 'FIXED',
+            discountValue: 50000,
+            minOrderAmount: 500000,
+            validDays: 30,
+            description: 'Giảm 50.000 ₫ cho đơn hàng từ 500.000 ₫ (Hiệu lực 30 ngày)',
+          },
+          {
+            tierCode: 'COUPON_120K',
+            title: 'Voucher giảm 120.000 ₫',
+            pointsCost: 100,
+            discountType: 'FIXED',
+            discountValue: 120000,
+            minOrderAmount: 1000000,
+            validDays: 30,
+            description: 'Giảm 120.000 ₫ cho đơn hàng từ 1.000.000 ₫ (Hiệu lực 30 ngày)',
+          },
+          {
+            tierCode: 'COUPON_300K',
+            title: 'Voucher giảm 300.000 ₫',
+            pointsCost: 200,
+            discountType: 'FIXED',
+            discountValue: 300000,
+            minOrderAmount: 2000000,
+            validDays: 30,
+            description: 'Giảm 300.000 ₫ cho đơn hàng từ 2.000.000 ₫ (Hiệu lực 30 ngày)',
+          },
+          {
+            tierCode: 'COUPON_800K',
+            title: 'Voucher giảm 800.000 ₫',
+            pointsCost: 500,
+            discountType: 'FIXED',
+            discountValue: 800000,
+            minOrderAmount: 5000000,
+            validDays: 30,
+            description: 'Giảm 800.000 ₫ cho đơn hàng từ 5.000.000 ₫ (Hiệu lực 30 ngày)',
+          },
+        ],
+        availableCoupons: state.coupons.filter((c) => c.active).map((c) => ({
+          ...c,
+          remainingTotalUses: c.usageLimit ?? 1,
+          remainingUserUses: c.usagePerUser ?? 1,
+          personal: c.code.startsWith('LYL'),
+        })),
+        transactions: [
+          {
+            id: 1,
+            type: 'EARN_ORDER',
+            pointsDelta: 300,
+            balanceAfter: 300,
+            referenceType: 'ORDER',
+            referenceId: 'ORD-DELIVERED-203',
+            description: 'Tích điểm từ đơn hàng #ORD-DELIVERED-203',
+            createdAt: '2026-11-20T09:00:00Z',
+          },
+        ],
+      });
+    }
+
+    if (path === '/me/loyalty/redeem' && method === 'POST') {
+      const body = req.postDataJSON() as { tierCode: string };
+      const cost = body.tierCode === 'COUPON_120K' ? 100 : 50;
+      const discount = body.tierCode === 'COUPON_120K' ? 120000 : 50000;
+      const minOrder = body.tierCode === 'COUPON_120K' ? 1000000 : 500000;
+      const currentBalance = (state as unknown as { loyaltyBalance?: number }).loyaltyBalance ?? 300;
+      if (currentBalance < cost) {
+        return json(route, { message: 'Số dư điểm Loyalty không đủ để đổi voucher này' }, 400);
+      }
+      const nextBalance = currentBalance - cost;
+      const nextRedeemed = ((state as unknown as { loyaltyRedeemed?: number }).loyaltyRedeemed ?? 0) + cost;
+      (state as unknown as { loyaltyBalance?: number }).loyaltyBalance = nextBalance;
+      (state as unknown as { loyaltyRedeemed?: number }).loyaltyRedeemed = nextRedeemed;
+
+      const createdCoupon = {
+        id: nextCouponId++,
+        code: `LYL${cost}-E2E999`,
+        discountType: 'FIXED' as const,
+        discountValue: discount,
+        maxDiscount: null,
+        minOrderAmount: minOrder,
+        usageLimit: 1,
+        usagePerUser: 1,
+        startsAt: '2026-01-01T00:00:00Z',
+        endsAt: '2026-12-31T23:59:59Z',
+        active: true,
+      };
+      state.coupons.unshift(createdCoupon);
+      return json(route, {
+        coupon: { ...createdCoupon, remainingTotalUses: 1, remainingUserUses: 1, personal: true },
+        pointsBalance: nextBalance,
+        totalRedeemed: nextRedeemed,
+        message: `Đổi điểm thành công! Mã coupon của bạn là ${createdCoupon.code}`,
+      });
+    }
 
     // Reviews
     if (path === '/me/reviews' && method === 'GET') {

@@ -29,6 +29,7 @@ import org.akira.laptopstore.order.service.impl.OrderExpirationTxHelper;
 import org.akira.laptopstore.order.service.impl.OrderServiceImpl;
 import org.akira.laptopstore.promotion.dto.response.CouponEvaluation;
 import org.akira.laptopstore.promotion.service.CouponService;
+import org.akira.laptopstore.promotion.service.LoyaltyService;
 import org.akira.laptopstore.user.dto.AddressResponse;
 import org.akira.laptopstore.user.service.AddressService;
 import org.junit.jupiter.api.BeforeEach;
@@ -67,6 +68,7 @@ class OrderServiceImplTest {
     @Mock private InventoryService inventoryService;
     @Mock private AddressService addressService;
     @Mock private CouponService couponService;
+    @Mock private LoyaltyService loyaltyService;
     @Mock private ApplicationEventPublisher eventPublisher;
 
     private OrderExpirationTxHelper expirationTxHelper;
@@ -92,6 +94,7 @@ class OrderServiceImplTest {
                 catalogCheckoutService,
                 inventoryService,
                 couponService,
+                loyaltyService,
                 checkoutSupport,
                 expirationTxHelper,
                 eventPublisher
@@ -851,6 +854,26 @@ class OrderServiceImplTest {
         assertEquals(300L, response.getId());
         verify(cartService).lockAndGetCheckoutCart(42L, List.of(9L));
         verify(cartService).clearPurchasedItems(42L, List.of(9L));
+    }
+
+    @Test
+    void updateOrderStatusToDeliveredAwardsLoyaltyPoints() {
+        Order shippingOrder = order(700L, 42L);
+        shippingOrder.setStatus(OrderStatus.SHIPPING);
+        shippingOrder.setTotalAmount(new BigDecimal("25000000"));
+        when(orders.findByIdForUpdate(700L)).thenReturn(Optional.of(shippingOrder));
+        when(histories.findByOrderIdOrderByChangedAtDesc(700L)).thenReturn(List.of());
+        when(orderItems.findByOrderId(700L)).thenReturn(List.of());
+
+        UpdateOrderStatusRequest request = new UpdateOrderStatusRequest();
+        request.setStatus(OrderStatus.DELIVERED);
+        request.setNote("Giao thành công");
+
+        var response = service.updateOrderStatus(99L, 700L, request);
+
+        assertEquals(OrderStatus.DELIVERED, response.getStatus());
+        verify(loyaltyService).awardPointsForDeliveredOrder(
+                42L, 700L, "ORD-700", new BigDecimal("25000000"));
     }
 
     private Order order(Long id, Long userId) {

@@ -14,6 +14,8 @@ import org.akira.laptopstore.payment.dto.request.StartPaymentRequest;
 import org.akira.laptopstore.payment.enums.PaymentMethod;
 import org.akira.laptopstore.payment.enums.PaymentStatus;
 import org.akira.laptopstore.payment.service.PaymentService;
+import org.akira.laptopstore.promotion.dto.request.RedeemLoyaltyCouponRequest;
+import org.akira.laptopstore.promotion.service.LoyaltyService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
@@ -61,6 +63,7 @@ class OrderLifecycleE2ETest {
     @Autowired private OrderService orderService;
     @Autowired private OrderPaymentService orderPaymentService;
     @Autowired private PaymentService paymentService;
+    @Autowired private LoyaltyService loyaltyService;
     @Autowired private JdbcTemplate jdbc;
 
     private Long userId;
@@ -273,6 +276,52 @@ class OrderLifecycleE2ETest {
                 .paymentMethod("COD")
                 .build());
         assertNotEquals(nullKeyOrder1.getId(), nullKeyOrder2.getId());
+    }
+
+    @Test
+    void deliveredOrderAwardsLoyaltyPointsAndUserCanRedeemCouponAndCheckoutWithItE2E() {
+        cartService.addItemToCart(userId, new AddCartItemRequest(variantId, 1));
+        var created = orderService.createOrder(userId, CreateOrderRequest.builder()
+                .addressId(addressId)
+                .paymentMethod("COD")
+                .build());
+
+        UpdateOrderStatusRequest confirm = new UpdateOrderStatusRequest();
+        confirm.setStatus(OrderStatus.CONFIRMED);
+        orderService.updateOrderStatus(staffId, created.getId(), confirm);
+
+        UpdateOrderStatusRequest pack = new UpdateOrderStatusRequest();
+        pack.setStatus(OrderStatus.PACKING);
+        orderService.updateOrderStatus(staffId, created.getId(), pack);
+
+        UpdateOrderStatusRequest ship = new UpdateOrderStatusRequest();
+        ship.setStatus(OrderStatus.SHIPPING);
+        orderService.updateOrderStatus(staffId, created.getId(), ship);
+
+        UpdateOrderStatusRequest deliver = new UpdateOrderStatusRequest();
+        deliver.setStatus(OrderStatus.DELIVERED);
+        orderService.updateOrderStatus(staffId, created.getId(), deliver);
+
+        // Đơn 20.000.000 ₫ giao thành công -> cộng 200 điểm Loyalty
+        var overviewAfterDelivery = loyaltyService.getMyLoyaltyOverview(userId);
+        assertEquals(200, overviewAfterDelivery.getPointsBalance());
+        assertEquals(200, overviewAfterDelivery.getTotalEarned());
+
+        // Đổi 100 điểm sang Coupon giảm 120.000 ₫
+        var redeemed = loyaltyService.redeemPointsForCoupon(userId, new RedeemLoyaltyCouponRequest("COUPON_120K"));
+        assertEquals(100, redeemed.getPointsBalance());
+        assertTrue(redeemed.getCoupon().isPersonal());
+        String personalCode = redeemed.getCoupon().getCode();
+
+        // Dùng mã vừa đổi từ Loyalty để đặt đơn mới
+        cartService.addItemToCart(userId, new AddCartItemRequest(variantId, 1));
+        var orderWithLoyaltyCoupon = orderService.createOrder(userId, CreateOrderRequest.builder()
+                .addressId(addressId)
+                .paymentMethod("COD")
+                .couponCode(personalCode)
+                .build());
+        assertEquals(new BigDecimal("120000.00"), orderWithLoyaltyCoupon.getDiscountAmount());
+        assertEquals(personalCode, orderWithLoyaltyCoupon.getCouponCodeSnapshot());
     }
 
     private int currentStock(Long id) {

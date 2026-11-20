@@ -40,6 +40,7 @@ import org.akira.laptopstore.order.statemachine.OrderStateMachine;
 import org.akira.laptopstore.order.util.OrderCodeGenerator;
 import org.akira.laptopstore.promotion.dto.response.CouponEvaluation;
 import org.akira.laptopstore.promotion.service.CouponService;
+import org.akira.laptopstore.promotion.service.LoyaltyService;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
@@ -75,6 +76,7 @@ public class OrderServiceImpl implements OrderService {
     private final CatalogCheckoutService catalogCheckoutService;
     private final InventoryService inventoryService;
     private final CouponService couponService;
+    private final LoyaltyService loyaltyService;
     private final OrderCheckoutSupport checkoutSupport;
     private final OrderExpirationTxHelper orderExpirationTxHelper;
     private final ApplicationEventPublisher eventPublisher;
@@ -495,6 +497,13 @@ public class OrderServiceImpl implements OrderService {
             eventPublisher.publishEvent(new OrderCancelledEvent(order.getId(), false));
         } else if (targetStatus == OrderStatus.RETURNED) {
             handleOrderReturnSideEffects(order, actorId);
+        } else if (targetStatus == OrderStatus.DELIVERED) {
+            loyaltyService.awardPointsForDeliveredOrder(
+                    order.getUserId(),
+                    order.getId(),
+                    order.getOrderCode(),
+                    order.getTotalAmount()
+            );
         }
 
         log.info("Cập nhật trạng thái đơn hàng thành công: orderId={}, từ [{}] sang [{}], actorId={}",

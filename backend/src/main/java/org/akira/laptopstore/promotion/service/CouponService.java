@@ -2,6 +2,7 @@ package org.akira.laptopstore.promotion.service;
 
 import org.akira.laptopstore.promotion.dto.request.CreateCouponRequest;
 import org.akira.laptopstore.promotion.dto.request.UpdateCouponRequest;
+import org.akira.laptopstore.promotion.dto.response.AvailableCouponResponse;
 import org.akira.laptopstore.promotion.dto.response.CouponEvaluation;
 import org.akira.laptopstore.promotion.dto.response.CouponResponse;
 
@@ -21,6 +22,11 @@ public interface CouponService {
      * Lấy danh sách tất cả coupon.
      */
     List<CouponResponse> getAllCoupons();
+
+    /**
+     * Lấy danh sách coupon mà user hiện tại có thể sử dụng (công khai + đổi từ Loyalty).
+     */
+    List<AvailableCouponResponse> getAvailableCouponsForUser(Long userId);
 
     /**
      * Lấy chi tiết coupon theo ID.

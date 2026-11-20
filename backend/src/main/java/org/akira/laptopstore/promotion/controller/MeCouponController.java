@@ -3,6 +3,7 @@ package org.akira.laptopstore.promotion.controller;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.akira.laptopstore.promotion.dto.request.PreviewCouponRequest;
+import org.akira.laptopstore.promotion.dto.response.AvailableCouponResponse;
 import org.akira.laptopstore.promotion.dto.response.CouponEvaluation;
 import org.akira.laptopstore.promotion.dto.response.CouponUsageResponse;
 import org.akira.laptopstore.promotion.service.CouponService;
@@ -55,6 +56,14 @@ public class MeCouponController {
 
                 return ResponseEntity.ok(
                                 couponUsageService.getByUserId(
+                                                userDetails.getId()));
+        }
+
+        @GetMapping("/available")
+        public ResponseEntity<List<AvailableCouponResponse>> getAvailableCoupons(
+                        @AuthenticationPrincipal CustomUserDetails userDetails) {
+                return ResponseEntity.ok(
+                                couponService.getAvailableCouponsForUser(
                                                 userDetails.getId()));
         }
 }

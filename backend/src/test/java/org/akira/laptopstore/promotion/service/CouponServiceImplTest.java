@@ -4,6 +4,7 @@ import org.akira.laptopstore.exception.ResourceNotFoundException;
 import org.akira.laptopstore.exception.ValidationException;
 import org.akira.laptopstore.promotion.dto.request.CreateCouponRequest;
 import org.akira.laptopstore.promotion.dto.request.UpdateCouponRequest;
+import org.akira.laptopstore.promotion.dto.response.AvailableCouponResponse;
 import org.akira.laptopstore.promotion.dto.response.CouponEvaluation;
 import org.akira.laptopstore.promotion.entity.Coupon;
 import org.akira.laptopstore.promotion.entity.CouponUsage;
@@ -24,6 +25,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -242,6 +244,88 @@ class CouponServiceImplTest {
         service.releaseForOrder(100L);
 
         verify(usages, never()).save(any());
+    }
+
+    @Test
+    void personalLoyaltyCouponCannotBeUsedByAnotherUser() {
+        Coupon personal = coupon(DiscountType.FIXED, "120000");
+        personal.setCode("LYL100-XYZ");
+        personal.setOwnerUserId(42L);
+        when(coupons.findByCodeIgnoreCase("LYL100-XYZ")).thenReturn(Optional.of(personal));
+
+        assertThrows(CouponNotApplicableException.class,
+                () -> service.evaluateForCheckout("LYL100-XYZ", 99L, new BigDecimal("2000000")));
+    }
+
+    @Test
+    void personalLoyaltyCouponCanBeUsedByOwner() {
+        Coupon personal = coupon(DiscountType.FIXED, "120000");
+        personal.setCode("LYL100-XYZ");
+        personal.setOwnerUserId(42L);
+        when(coupons.findByCodeIgnoreCase("LYL100-XYZ")).thenReturn(Optional.of(personal));
+
+        CouponEvaluation eval = service.evaluateForCheckout("LYL100-XYZ", 42L, new BigDecimal("2000000"));
+        assertEquals(new BigDecimal("120000.00"), eval.discountAmount());
+    }
+
+    @Test
+    void getAvailableCouponsForUserReturnsActivePublicAndOwnPersonalCouponsWithRemainingQuota() {
+        Instant now = Instant.now();
+        Coupon personalAvailable = Coupon.builder()
+                .id(10L)
+                .code("LYL50-OWN")
+                .ownerUserId(42L)
+                .discountType(DiscountType.FIXED)
+                .discountValue(new BigDecimal("50000"))
+                .minOrderAmount(new BigDecimal("500000"))
+                .usageLimit(1)
+                .usagePerUser(1)
+                .startsAt(now.minus(Duration.ofHours(1)))
+                .endsAt(now.plus(Duration.ofDays(15)))
+                .active(true)
+                .build();
+        Coupon publicAvailable = Coupon.builder()
+                .id(11L)
+                .code("WELCOME10")
+                .ownerUserId(null)
+                .discountType(DiscountType.PERCENT)
+                .discountValue(new BigDecimal("10"))
+                .maxDiscount(new BigDecimal("300000"))
+                .usageLimit(100)
+                .usagePerUser(2)
+                .startsAt(now.minus(Duration.ofDays(1)))
+                .endsAt(now.plus(Duration.ofDays(7)))
+                .active(true)
+                .build();
+        Coupon exhaustedCoupon = Coupon.builder()
+                .id(12L)
+                .code("USEDUP")
+                .ownerUserId(42L)
+                .discountType(DiscountType.FIXED)
+                .discountValue(new BigDecimal("50000"))
+                .usageLimit(1)
+                .usagePerUser(1)
+                .active(true)
+                .build();
+
+        when(coupons.findActiveCandidatesForUser(42L))
+                .thenReturn(List.of(personalAvailable, publicAvailable, exhaustedCoupon));
+        when(usages.countByCouponIdAndStatus(10L, CouponUsageStatus.ACTIVE)).thenReturn(0L);
+        when(usages.countByCouponIdAndUserIdAndStatus(10L, 42L, CouponUsageStatus.ACTIVE)).thenReturn(0L);
+        when(usages.countByCouponIdAndStatus(11L, CouponUsageStatus.ACTIVE)).thenReturn(20L);
+        when(usages.countByCouponIdAndUserIdAndStatus(11L, 42L, CouponUsageStatus.ACTIVE)).thenReturn(1L);
+        when(usages.countByCouponIdAndStatus(12L, CouponUsageStatus.ACTIVE)).thenReturn(1L);
+
+        List<AvailableCouponResponse> available = service.getAvailableCouponsForUser(42L);
+
+        assertEquals(2, available.size());
+        assertEquals("LYL50-OWN", available.get(0).getCode());
+        assertTrue(available.get(0).isPersonal());
+        assertEquals(1, available.get(0).getRemainingUserUses());
+        assertEquals("WELCOME10", available.get(1).getCode());
+        assertFalse(available.get(1).isPersonal());
+        assertEquals(80, available.get(1).getRemainingTotalUses());
+        assertEquals(1, available.get(1).getRemainingUserUses());
     }
 
     private CreateCouponRequest createRequest(String code) {

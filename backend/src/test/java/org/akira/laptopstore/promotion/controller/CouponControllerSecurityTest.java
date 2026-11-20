@@ -2,11 +2,15 @@ package org.akira.laptopstore.promotion.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.akira.laptopstore.promotion.dto.request.CreateCouponRequest;
+import org.akira.laptopstore.promotion.dto.response.AvailableCouponResponse;
 import org.akira.laptopstore.promotion.dto.response.CouponEvaluation;
 import org.akira.laptopstore.promotion.dto.response.CouponResponse;
+import org.akira.laptopstore.promotion.dto.response.LoyaltyOverviewResponse;
+import org.akira.laptopstore.promotion.dto.response.LoyaltyRedeemResponse;
 import org.akira.laptopstore.promotion.enums.DiscountType;
 import org.akira.laptopstore.promotion.service.CouponService;
 import org.akira.laptopstore.promotion.service.CouponUsageService;
+import org.akira.laptopstore.promotion.service.LoyaltyService;
 import org.akira.laptopstore.security.CustomAccessDeniedHandler;
 import org.akira.laptopstore.security.JwtAuthenticationEntryPoint;
 import org.akira.laptopstore.security.SecurityConfig;
@@ -39,7 +43,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-@WebMvcTest({AdminCouponController.class, CouponUsageController.class, MeCouponController.class})
+@WebMvcTest({AdminCouponController.class, CouponUsageController.class, MeCouponController.class, MeLoyaltyController.class})
 @Import({SecurityConfig.class, JwtAuthenticationFilter.class,
         JwtAuthenticationEntryPoint.class, CustomAccessDeniedHandler.class})
 class CouponControllerSecurityTest {
@@ -49,6 +53,7 @@ class CouponControllerSecurityTest {
 
     @MockitoBean private CouponService couponService;
     @MockitoBean private CouponUsageService couponUsageService;
+    @MockitoBean private LoyaltyService loyaltyService;
     @MockitoBean private JwtTokenProvider jwtTokenProvider;
     @MockitoBean private CustomUserDetailsService userDetailsService;
 
@@ -184,6 +189,50 @@ class CouponControllerSecurityTest {
                 .andExpect(status().isUnauthorized());
 
         verifyNoInteractions(couponService);
+    }
+
+    @Test
+    @DisplayName("GET /api/v1/me/coupons/available với ROLE_USER trả 200")
+    void getAvailableCoupons_whenUserRole_shouldReturn200() throws Exception {
+        CustomUserDetails principal = principal(42L, "ROLE_USER");
+        when(couponService.getAvailableCouponsForUser(42L))
+                .thenReturn(List.of(AvailableCouponResponse.builder().id(1L).code("SALE10").build()));
+
+        mockMvc.perform(get("/api/v1/me/coupons/available")
+                        .with(user(principal)))
+                .andExpect(status().isOk());
+
+        verify(couponService).getAvailableCouponsForUser(42L);
+    }
+
+    @Test
+    @DisplayName("GET /api/v1/me/loyalty với ROLE_USER trả 200")
+    void getLoyaltyOverview_whenUserRole_shouldReturn200() throws Exception {
+        CustomUserDetails principal = principal(42L, "ROLE_USER");
+        when(loyaltyService.getMyLoyaltyOverview(42L))
+                .thenReturn(LoyaltyOverviewResponse.builder().pointsBalance(120).build());
+
+        mockMvc.perform(get("/api/v1/me/loyalty")
+                        .with(user(principal)))
+                .andExpect(status().isOk());
+
+        verify(loyaltyService).getMyLoyaltyOverview(42L);
+    }
+
+    @Test
+    @DisplayName("POST /api/v1/me/loyalty/redeem với ROLE_USER trả 200")
+    void redeemLoyaltyCoupon_whenUserRole_shouldReturn200() throws Exception {
+        CustomUserDetails principal = principal(42L, "ROLE_USER");
+        when(loyaltyService.redeemPointsForCoupon(any(), any()))
+                .thenReturn(LoyaltyRedeemResponse.builder().pointsBalance(20).build());
+
+        mockMvc.perform(post("/api/v1/me/loyalty/redeem")
+                        .with(user(principal))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"tierCode\":\"COUPON_120K\"}"))
+                .andExpect(status().isOk());
+
+        verify(loyaltyService).redeemPointsForCoupon(any(), any());
     }
 
     private CreateCouponRequest sampleCreateRequest() {
