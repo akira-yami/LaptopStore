@@ -5,7 +5,8 @@
   <img src="https://img.shields.io/badge/Spring%20Boot-4.1.1-6DB33F?style=for-the-badge&logo=springboot&logoColor=white" alt="Spring Boot" />
   <img src="https://img.shields.io/badge/Spring%20Security-JWT%20%2B%20RBAC-6DB33F?style=for-the-badge&logo=springsecurity&logoColor=white" alt="Spring Security" />
   <img src="https://img.shields.io/badge/PostgreSQL-17-4169E1?style=for-the-badge&logo=postgresql&logoColor=white" alt="PostgreSQL 17" />
-  <img src="https://img.shields.io/badge/Flyway-Migrations%20V1--V9-CC0200?style=for-the-badge&logo=flyway&logoColor=white" alt="Flyway" />
+  <img src="https://img.shields.io/badge/Flyway-Migrations%20V1--V13-CC0200?style=for-the-badge&logo=flyway&logoColor=white" alt="Flyway" />
+  <img src="https://img.shields.io/badge/Swagger%20UI-OpenAPI%203-85EA2D?style=for-the-badge&logo=swagger&logoColor=111111" alt="Swagger OpenAPI 3" />
 </p>
 
 <p align="center">
@@ -47,12 +48,12 @@ Hệ thống bán laptop trực tuyến B2C (Full-stack Monolith) gồm **Backen
 |---|---|
 | **Backend Core** | Java 21 (chạy trên JDK 25), Spring Boot `4.1.1`, Spring Web MVC, Spring Data JPA, Spring Validation |
 | **Security & Auth** | Spring Security (Stateless), JWT (`jjwt 0.12.6`) Access Token + Refresh Token Rotation (`HttpOnly` cookie), BCrypt |
-| **Database & Migration** | PostgreSQL 17 (`postgres:17-alpine`), Flyway (`V1` $\rightarrow$ `V9` + `db/seed`) |
+| **Database & Migration** | PostgreSQL 17 (`postgres:17-alpine`), Flyway (`V1` $\rightarrow$ `V13` + `db/seed`) |
 | **Mapping & Boilerplate** | MapStruct `1.5.5.Final`, Lombok |
 | **Frontend Core** | React `18.3`, TypeScript `5.6`, Vite `6.0`, React Router `6.28`, Axios `1.21`, TailwindCSS `3.4` + CSS Tokens |
-| **Payment & AI** | VNPay Gateway `2.1.0` (`HMAC-SHA512`, Return URL + IPN), Gemini AI Integration (`/api/v1/ai/**`) |
+| **Payment & AI** | VNPay Gateway `2.1.0` (`HMAC-SHA512`, Return URL + IPN), Refund Requests & StoreCredit Wallet, AI Assistant (`/api/v1/ai/**`) |
 | **Testing & Quality** | JUnit 5, Mockito, Spring MockMvc, ArchUnit `1.5.0`, Vitest `5.1`, React Testing Library `16.3`, Playwright `1.65` |
-| **DevOps & API Docs** | Docker & Docker Compose, GitHub Actions CI ([ci.yml](.github/workflows/ci.yml)), Postman Collection ([postman/](postman/)) |
+| **DevOps & API Docs** | Docker & Docker Compose, Railway ([DEPLOY_RAILWAY.md](DEPLOY_RAILWAY.md)), GitHub Actions CI ([ci.yml](.github/workflows/ci.yml)), Swagger / OpenAPI 3 (`/swagger-ui.html`, `/v3/api-docs`), Postman Collection ([postman/](postman/)) |
 
 ---
 
@@ -63,13 +64,13 @@ Hệ thống bán laptop trực tuyến B2C (Full-stack Monolith) gồm **Backen
   - Duyệt/tìm kiếm/lọc laptop theo thương hiệu, danh mục, RAM, SSD, khoảng giá; xem chi tiết cấu hình & biến thể SKU.
   - Giỏ hàng đồng bộ DB: hiển thị ảnh/tồn kho/trạng thái mở bán, chọn mua một phần hoặc toàn bộ giỏ hàng.
   - Checkout nguyên tử: áp dụng mã giảm giá (`preview`), lưu ghi chú giao hàng, chống tạo đơn trùng qua `Idempotency-Key` (theo từng cặp `user_id + idempotency_key` + kiểm tra giỏ hàng/payload).
-  - Thanh toán **COD** hoặc **VNPay** (tự động tạo `Payment` đồng bộ transaction, hết hạn đơn online sau 15 phút, trang xác minh `/payment/vnpay-return`).
-  - Theo dõi lịch sử đơn hàng (lọc trạng thái + phân trang phía server), hủy đơn hoàn kho/hoàn coupon, viết đánh giá sản phẩm đã giao (`DELIVERED`).
+  - Thanh toán **COD**, **VNPay** (tự động tạo `Payment` đồng bộ transaction, hết hạn đơn online sau 15 phút, trang xác minh `/payment/vnpay-return`), hoặc ví **StoreCredit**.
+  - Theo dõi lịch sử đơn hàng (lọc trạng thái + phân trang phía server), gửi yêu cầu hủy đơn COD / yêu cầu hoàn tiền kèm ảnh minh chứng, tích & đổi điểm **Loyalty** lấy coupon cá nhân, viết đánh giá sản phẩm đã giao (`DELIVERED`).
   - Trợ lý AI tư vấn cấu hình laptop.
 - **Nhân viên & Quản trị (`ROLE_STAFF`, `ROLE_ADMIN`):**
   - Dashboard tổng hợp doanh thu & số lượng đơn hàng (`GET /api/v1/staff/orders/summary`).
-  - Quản lý đơn hàng: tìm kiếm theo mã đơn/tên khách & lọc trạng thái phía server, xem trạng thái thanh toán từng đơn, chuyển trạng thái theo State Machine, xác nhận thu tiền COD, xử lý trả hàng (`RETURNED` tách biệt khỏi `CANCELLED`).
-  - Quản lý danh mục, thương hiệu, sản phẩm/biến thể, tồn kho (`stock_movements`), nhà cung cấp & phiếu nhập hàng (`purchase_orders`), mã giảm giá (`coupons`), kiểm duyệt đánh giá, quản lý tài khoản & phân quyền (`ADMIN`).
+  - Quản lý đơn hàng: tìm kiếm theo mã đơn/tên khách & lọc trạng thái phía server, xem trạng thái thanh toán từng đơn, chuyển trạng thái theo State Machine, duyệt yêu cầu hủy đơn COD, xác nhận thu tiền COD, xử lý trả hàng (`RETURNED`) và xét duyệt yêu cầu hoàn tiền (`ADMIN`, cộng vào `StoreCredit`).
+  - Quản lý danh mục, thương hiệu, sản phẩm/biến thể, tồn kho (`stock_movements`), nhà cung cấp & phiếu nhập hàng (`purchase_orders`), mã giảm giá (`coupons`), kiểm duyệt đánh giá, quản lý tài khoản & phân quyền phân cấp (`ADMIN`).
 
 ---
 
@@ -94,8 +95,8 @@ LaptopStore/
 │   │   ├── health/                  # Ping / Health check
 │   │   ├── security/, config/, exception/, common/
 │   ├── src/main/resources/
-│   │   ├── application.properties   # Cấu hình DB, Flyway, JWT, VNPay, AI, Upload
-│   │   └── db/migration/            # Flyway SQL migrations (V1 -> V9)
+│   │   ├── application.properties   # Cấu hình DB, Flyway, JWT, VNPay, AI, Swagger, Upload
+│   │   └── db/migration/            # Flyway SQL migrations (V1 -> V13)
 │   ├── docs/                        # Tài liệu kiến trúc (01..12) & nghiệp vụ
 │   ├── docker-compose.yml           # App + PostgreSQL 17 (cổng host DB mặc định 5434)
 │   └── pom.xml
@@ -145,6 +146,11 @@ npm install
 npm run dev
 ```
 
+### Bước 3: Tài liệu API tương tác (Swagger UI / OpenAPI 3)
+- Swagger UI: `http://localhost:8081/swagger-ui.html` (hỗ trợ nút **Authorize** để dán JWT Bearer token khi demo)
+- OpenAPI JSON: `http://localhost:8081/v3/api-docs`
+- Mặc định `SWAGGER_ENABLED=true` (mở `permitAll` cho `GET`/`HEAD` trên `/swagger-ui/**`, `/swagger-ui.html`, `/v3/api-docs/**`). Khi muốn khóa tài liệu API trên production, đặt biến môi trường `SWAGGER_ENABLED=false`.
+
 ---
 
 ## 5. Cấu hình thanh toán VNPay Sandbox
@@ -193,7 +199,7 @@ Mọi thao tác `push` / `pull_request` lên nhánh `main` được kiểm tra t
   - Tổng quan & Tầng: [01-overview.md](backend/docs/architecture/01-overview.md), [02-structure-and-layers.md](backend/docs/architecture/02-structure-and-layers.md)
   - Ownership & Allowlist phụ thuộc: [03-ownership.md](backend/docs/architecture/03-ownership.md), [04-dependencies.md](backend/docs/architecture/04-dependencies.md)
   - Dữ liệu, Luồng nghiệp vụ, API & Bảo mật: [05-data-and-consistency.md](backend/docs/architecture/05-data-and-consistency.md), [06-business-flows.md](backend/docs/architecture/06-business-flows.md), [07-api-contracts.md](backend/docs/architecture/07-api-contracts.md), [08-security.md](backend/docs/architecture/08-security.md)
-  - ERD & Entity Model (25 bảng): [11-entity-model.md](backend/docs/architecture/11-entity-model.md), [12-ERD-LaptopStore.md](backend/docs/architecture/12-ERD-LaptopStore.md)
+  - ERD & Entity Model (25 bảng baseline + 6 bảng mở rộng V10–V13): [11-entity-model.md](backend/docs/architecture/11-entity-model.md), [12-ERD-LaptopStore.md](backend/docs/architecture/12-ERD-LaptopStore.md)
 - Phân công nhóm 4 người ([phan_chia_cong_viec.md](backend/docs/phan_chia_cong_viec.md)):
   - **Owner A:** `auth`, `user`, `security`, `config`, `exception`, `common`
   - **Owner B:** `catalog`, `inventory`, `procurement`

@@ -43,6 +43,9 @@ public class SecurityConfig {
     @Value("${app.cors.allowed-origin-patterns:http://localhost:5173,http://localhost:3000,http://127.0.0.1:*}")
     private String allowedOriginPatterns;
 
+    @Value("${app.swagger.enabled:true}")
+    private boolean swaggerEnabled;
+
     @Bean
     public SecureRandom secureRandom() {
         return new SecureRandom();
@@ -67,46 +70,54 @@ public class SecurityConfig {
                 .exceptionHandling(ex -> ex
                         .authenticationEntryPoint(authenticationEntryPoint)
                         .accessDeniedHandler(accessDeniedHandler))
-                .authorizeHttpRequests(auth -> auth
-                        // Public endpoints
-                        .requestMatchers("/api/v1/auth/**", "/api/v1/ai/**", "/api/v1/ping", "/api/v1/health").permitAll()
-                        .requestMatchers(HttpMethod.GET, "/api/v1/products/**", "/api/v1/brands/**",
-                                "/api/v1/categories/**", "/api/v1/reviews/**")
-                        .permitAll()
-                        // Ảnh sản phẩm tĩnh: thẻ <img> không gửi JWT nên phải public (GET/HEAD)
-                        .requestMatchers(HttpMethod.GET, "/uploads/**").permitAll()
-                        .requestMatchers(HttpMethod.HEAD, "/uploads/**").permitAll()
-                        // VNPay không có JWT của user trong hệ thống
-                        .requestMatchers(
-                                "/api/v1/payments/vnpay/ipn",
-                                "/api/v1/payments/vnpay/return")
-                        .permitAll()
-                        .requestMatchers("/error").permitAll()
-                        // Staff endpoints
-                        .requestMatchers("/api/v1/staff/**").hasAnyRole("STAFF", "ADMIN")
-                        /*
-                         * =========================================================================
-                         * [TẠI SAO THAY ĐỔI & BẢN CHẤT NGHIỆP VỤ]:
-                         * - Lý do thay đổi: Mở quyền truy cập các endpoint catalog quản trị (products, brands, categories)
-                         *   cho cả tài khoản nhân viên (STAFF) lẫn quản trị viên (ADMIN).
-                         * - Nếu giữ theo cách cũ (chỉ có dòng hasRole("ADMIN") bên dưới):
-                         *   Tài khoản STAFF khi đăng nhập vào ca làm việc để quản lý danh mục, thêm/sửa hãng máy
-                         *   hoặc cấu hình hình ảnh/biến thể laptop sẽ bị chặn với mã lỗi HTTP 403 Forbidden.
-                         * - Xử lý theo cách mới được lợi gì:
-                         *   + Cho phép nhân viên vận hành cửa hàng tham gia quản lý thương hiệu và sản phẩm trực tiếp.
-                         *   + Quy tắc match URL theo thứ tự từ trên xuống: dòng này đón trước `/api/v1/admin/products/**`,
-                         *     `/brands/**`, `/categories/**` cho STAFF & ADMIN, trong khi các endpoint nhạy cảm khác
-                         *     của admin (như quản lý user/phân quyền) ở dòng dưới vẫn được bảo vệ nghiêm ngặt chỉ cho ADMIN.
-                         * =========================================================================
-                         */
-                        // Admin & Staff catalog management endpoints
-                        .requestMatchers("/api/v1/admin/products/**", "/api/v1/admin/brands/**", "/api/v1/admin/categories/**").hasAnyRole("STAFF", "ADMIN")
-                        // Admin endpoints
-                        .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
-
-                        // Authenticated endpoints
-                        .requestMatchers("/api/v1/me/**").authenticated()
-                        .anyRequest().authenticated())
+                .authorizeHttpRequests(auth -> {
+                    // Public endpoints
+                    auth.requestMatchers("/api/v1/auth/**", "/api/v1/ai/**", "/api/v1/ping", "/api/v1/health").permitAll();
+                    auth.requestMatchers(HttpMethod.GET, "/api/v1/products/**", "/api/v1/brands/**",
+                            "/api/v1/categories/**", "/api/v1/reviews/**")
+                            .permitAll();
+                    // Swagger / OpenAPI docs (mở khi bật app.swagger.enabled=true cho dev/demo)
+                    if (swaggerEnabled) {
+                        auth.requestMatchers(HttpMethod.GET, "/v3/api-docs", "/v3/api-docs/**",
+                                "/swagger-ui.html", "/swagger-ui/**").permitAll();
+                        auth.requestMatchers(HttpMethod.HEAD, "/v3/api-docs", "/v3/api-docs/**",
+                                "/swagger-ui.html", "/swagger-ui/**").permitAll();
+                    }
+                    // Ảnh sản phẩm tĩnh: thẻ <img> không gửi JWT nên phải public (GET/HEAD)
+                    auth.requestMatchers(HttpMethod.GET, "/uploads/**").permitAll();
+                    auth.requestMatchers(HttpMethod.HEAD, "/uploads/**").permitAll();
+                    // VNPay không có JWT của user trong hệ thống
+                    auth.requestMatchers(
+                            "/api/v1/payments/vnpay/ipn",
+                            "/api/v1/payments/vnpay/return")
+                            .permitAll();
+                    auth.requestMatchers("/error").permitAll();
+                    // Staff endpoints
+                    auth.requestMatchers("/api/v1/staff/**").hasAnyRole("STAFF", "ADMIN");
+                    /*
+                     * =========================================================================
+                     * [TẠI SAO THAY ĐỔI & BẢN CHẤT NGHIỆP VỤ]:
+                     * - Lý do thay đổi: Mở quyền truy cập các endpoint catalog quản trị (products, brands, categories)
+                     *   cho cả tài khoản nhân viên (STAFF) lẫn quản trị viên (ADMIN).
+                     * - Nếu giữ theo cách cũ (chỉ có dòng hasRole("ADMIN") bên dưới):
+                     *   Tài khoản STAFF khi đăng nhập vào ca làm việc để quản lý danh mục, thêm/sửa hãng máy
+                     *   hoặc cấu hình hình ảnh/biến thể laptop sẽ bị chặn với mã lỗi HTTP 403 Forbidden.
+                     * - Xử lý theo cách mới được lợi gì:
+                     *   + Cho phép nhân viên vận hành cửa hàng tham gia quản lý thương hiệu và sản phẩm trực tiếp.
+                     *   + Quy tắc match URL theo thứ tự từ trên xuống: dòng này đón trước `/api/v1/admin/products/**`,
+                     *     `/brands/**`, `/categories/**` cho STAFF & ADMIN, trong khi các endpoint nhạy cảm khác
+                     *     của admin (như quản lý user/phân quyền) ở dòng dưới vẫn được bảo vệ nghiêm ngặt chỉ cho ADMIN.
+                     * =========================================================================
+                     */
+                    // Admin & Staff catalog management endpoints
+                    auth.requestMatchers("/api/v1/admin/products/**", "/api/v1/admin/brands/**", "/api/v1/admin/categories/**")
+                            .hasAnyRole("STAFF", "ADMIN");
+                    // Admin endpoints
+                    auth.requestMatchers("/api/v1/admin/**").hasRole("ADMIN");
+                    // Authenticated endpoints
+                    auth.requestMatchers("/api/v1/me/**").authenticated();
+                    auth.anyRequest().authenticated();
+                })
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();

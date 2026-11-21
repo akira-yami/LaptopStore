@@ -3,7 +3,7 @@
 > Nguồn chuẩn: [`database/LaptopStore_ERD.png`](../../../database/LaptopStore_ERD.png).
 > Thuộc tính và quan hệ trong tài liệu này được đọc theo **PK / FK / UQ hiển thị trong ERD**. Không suy diễn thêm cột hoặc unique constraint chỉ từ yêu cầu nghiệp vụ.
 
-**Rà soát:** 2026-10-01. Danh sách 25 bảng và toàn bộ cột dưới đây khớp ảnh ERD. [11 Entity model](11-entity-model.md) bổ sung tên field/kiểu Java và các khác biệt của source; [13 Phân quyền và chức năng](13-roles-and-functions.md) nối các bảng với use case và quyền thiết kế.
+**Rà soát:** 2026-11-21. Danh sách 25 bảng ở mục 2–15 khớp ảnh ERD baseline (`V1`). Các bảng mở rộng từ migration `V10`–`V13` (6 bảng mới, tổng **31 bảng**) được ghi riêng ở mục 16 để không làm sai lệch đối chiếu với ảnh ERD gốc. [11 Entity model](11-entity-model.md) bổ sung tên field/kiểu Java và các khác biệt của source; [13 Phân quyền và chức năng](13-roles-and-functions.md) nối các bảng với use case và quyền thiết kế.
 
 ## 1. Quy ước
 
@@ -552,6 +552,22 @@ V1 mới đã bổ sung CHECK cho quantity/giá/tiền, total_amount, ledger del
 [V1 init](../../src/main/resources/db/migration/V1__init_schema.sql) khởi tạo đủ 25 bảng/192 cột/30 FK/14 UQ trên database trống và seed ROLE_USER/ROLE_STAFF/ROLE_ADMIN. Đã kiểm Flyway migrate, Hibernate ddl-auto=validate và fixture SQL trên PostgreSQL 17.10; không thêm UQ ngoài ERD cho specification hoặc cặp cart/variant.
 
 Database dự án đã ghi nhận V1 identity cũ thành công và chưa được áp dụng V1 mới. V1 mới là yêu cầu gộp bootstrap cho database mới; database giữ dữ liệu cũ cần đúng V1 đã áp dụng và V2 nâng cấp riêng. Không repair checksum hoặc xóa history thay cho upgrade. Các kiểu/default/CHECK/index/delete policy của V1 mới được mô tả ở README migration; thay đổi sau bootstrap dùng version mới.
+
+## 16. Mở rộng schema sau baseline ERD (`V10`–`V13`)
+
+Ngoài 25 bảng baseline từ ảnh ERD gốc, các migration `V10`–`V13` bổ sung **6 bảng** mới (tổng **31 bảng** vật lý):
+
+- **Loyalty (`promotion` — `V10`):**
+  - `loyalty_accounts` (`user_id` FK/UQ → `users.id`, quan hệ `1 : 0..1`)
+  - `loyalty_transactions` (`user_id` FK → `users.id`, `operation_key` UQ, quan hệ `1 : N`)
+  - Cột bổ sung: `coupons.owner_user_id` (FK → `users.id`)
+- **COD Cancellation (`order` — `V11`):**
+  - Cột bổ sung trên `orders`: `payment_method`, `cancellation_request_reason`
+- **Refund & StoreCredit (`payment` — `V12`, `V13`):**
+  - `refund_requests` (`order_id` FK → `payments.order_id`, `reviewed_by_user_id` FK → `users.id`, unique partial index trên `(order_id)` khi `status IN ('PENDING', 'APPROVED')`, cột `credited_to_store_credit`)
+  - `refund_request_evidence` (`refund_request_id` FK → `refund_requests.id` ON DELETE CASCADE, quan hệ `1 : N`)
+  - `store_credit_wallets` (`user_id` PK/FK → `users.id`, quan hệ `1 : 0..1`)
+  - `store_credit_entries` (`user_id` FK → `store_credit_wallets.user_id`, `order_id` FK → `orders.id`, `refund_request_id` FK/UQ → `refund_requests.id`, unique partial index trên `(order_id)` khi `kind = 'PURCHASE'`)
 
 ## Kết luận
 

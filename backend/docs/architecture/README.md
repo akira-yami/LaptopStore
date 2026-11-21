@@ -1,6 +1,6 @@
 # Kiến trúc LaptopStore
 
-**Phạm vi:** backend đồ án Spring Boot, một ứng dụng và một PostgreSQL. **Ngày rà soát:** 2026-09-21. **Người điều phối:** Owner A, chưa gán danh tính. Tài liệu phục vụ lập trình viên và reviewer; README trong source là quy tắc tại vị trí làm việc.
+**Phạm vi:** backend đồ án Spring Boot, một ứng dụng và một PostgreSQL. **Ngày rà soát:** 2026-11-21. **Phân công:** Xem [phan_chia_cong_viec.md](../phan_chia_cong_viec.md). Tài liệu phục vụ lập trình viên và reviewer; README trong source là quy tắc tại vị trí làm việc.
 
 | Tài liệu | Đọc để làm gì |
 |---|---|
@@ -10,12 +10,12 @@
 | [04 Phụ thuộc và contract](04-dependencies.md) | Danh sách gọi chéo được phép, DTO nội bộ |
 | [05 Dữ liệu và nhất quán](05-data-and-consistency.md) | Bảng, constraint, tiền, tồn, transaction |
 | [06 Luồng nghiệp vụ](06-business-flows.md) | Checkout, hủy, nhập hàng, thanh toán, trạng thái |
-| [07 API và lỗi](07-api-contracts.md) | Endpoint dự kiến, payload, response và mã lỗi |
+| [07 API và lỗi](07-api-contracts.md) | Quy ước endpoint, OpenAPI/Swagger UI (`/swagger-ui.html`), payload và mã lỗi |
 | [08 Bảo mật](08-security.md) | Role, ownership, token, thông tin nhạy cảm |
 | [09 Kiểm thử và vận hành](09-testing-and-operation.md) | Cách chạy, ca kiểm tra và khoảng trống công cụ |
 | [10 Hoàn tất và triển khai](10-delivery-checklist.md) | Các mốc, checklist PR, rủi ro và việc cần chốt |
-| [11 Entity model](11-entity-model.md) | 25 bảng ERD, field/kiểu Java, ánh xạ JPA và khác biệt triển khai |
-| [12 ERD LaptopStore](12-ERD-LaptopStore.md) | Từng bảng, thuộc tính, PK/FK/UQ và toàn bộ quan hệ |
+| [11 Entity model](11-entity-model.md) | 25 bảng ERD baseline + 6 bảng mở rộng V10–V13, field/kiểu Java và ánh xạ JPA |
+| [12 ERD LaptopStore](12-ERD-LaptopStore.md) | Từng bảng, thuộc tính, PK/FK/UQ, quan hệ và mở rộng V10–V13 (31 bảng) |
 | [13 Phân quyền và chức năng](13-roles-and-functions.md) | Chức năng USER/STAFF/ADMIN, dữ liệu liên quan và hiện trạng kiểm quyền |
 | [SD-05 Sequence Đăng ký](SD-05-sequence-dang-ky.md) | Biểu đồ tuần tự quy trình đăng ký tài khoản và mã hóa mật khẩu |
 | [SD-06 Sequence Đăng nhập + JWT/RBAC](SD-06-sequence-dang-nhap-jwt-rbac.md) | Biểu đồ tuần tự đăng nhập, cấp phát JWT và phân quyền đa vai trò |

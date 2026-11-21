@@ -1,6 +1,10 @@
 # Quy ước API và lỗi
 
-Đây là API **dự kiến**, chưa có endpoint nào trong source nghiệp vụ. Owner phải chốt request/response và quyền trước khi frontend tích hợp; OpenAPI sẽ là hợp đồng chạy được khi thêm dependency/cấu hình.
+> **Cập nhật (2026-11-21):** Các REST endpoint nghiệp vụ đã được triển khai và tích hợp tài liệu tương tác **OpenAPI 3 / Swagger UI** (`springdoc-openapi-starter-webmvc-ui`):
+> - Swagger UI: `/swagger-ui.html` (hỗ trợ JWT Bearer `bearerAuth` qua nút **Authorize**)
+> - OpenAPI JSON: `/v3/api-docs`
+> - Biến môi trường điều khiển công khai docs khi demo: `SWAGGER_ENABLED=true` (mặc định bật cho dev/demo, đặt `false` để tắt và yêu cầu xác thực trên production).
+> - Bộ collection kiểm thử thủ công nằm tại [`postman/LaptopStore.postman_collection.json`](../../../postman/LaptopStore.postman_collection.json).
 
 ## Quy ước HTTP
 

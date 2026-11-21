@@ -35,6 +35,8 @@ provider callbacks (VNPay IPN).
 - `CORS_ALLOWED_ORIGIN_PATTERNS=https://${{web.RAILWAY_PUBLIC_DOMAIN}},https://${{api.RAILWAY_PUBLIC_DOMAIN}},http://localhost:5173,http://localhost:3000,http://127.0.0.1:*`
 - `UPLOAD_DIR=/app/uploads`
 - `AI_ENABLED=false` until an API key is provisioned
+- `SWAGGER_ENABLED=true` for demo/review (serves `/swagger-ui.html` and `/v3/api-docs` publicly); set `SWAGGER_ENABLED=false` to disable/lock API docs in production
+- `APP_SEED_DEMO_DATA=false` on production, paired with `ADMIN_BOOTSTRAP_EMAIL` and `ADMIN_BOOTSTRAP_PASSWORD` for the initial admin account
 - `VNPAY_RETURN_URL=https://<web-domain>/payment/vnpay-return`
 - `VNPAY_IPN_URL=https://<api-domain>/api/v1/payments/vnpay/ipn`
 - `VNPAY_TMN_CODE` and `VNPAY_HASH_SECRET`: enter privately for real sandbox/production payments.

@@ -29,7 +29,7 @@ if exist "%TEMP_ZIP%" del /f /q "%TEMP_ZIP%"
 echo ============================================================
 echo   Nen du an: %PROJECT_NAME%
 echo   File dich : %DEST_ZIP%
-echo   Bo qua    : node_modules, target, temp, tmp, output, out,
+echo   Bo qua    : .git, node_modules, target, temp, tmp, output, out,
 echo               dist, build, pgdata, logs, coverage, cache,
 echo               playwright-report, test-results, *.log, *.tmp
 echo ============================================================
@@ -37,6 +37,9 @@ echo.
 echo [INFO] Dang nen du lieu, vui long cho...
 
 tar.exe -a -c -f "%TEMP_ZIP%" ^
+    --exclude=".git" ^
+    --exclude="*/.git" ^
+    --exclude="*/.git/*" ^
     --exclude="node_modules" ^
     --exclude="*/node_modules" ^
     --exclude="*/node_modules/*" ^

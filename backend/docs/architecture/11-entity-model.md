@@ -2,7 +2,7 @@
 
 Tài liệu này ánh xạ trực tiếp từ [`database/LaptopStore_ERD.png`](../../../database/LaptopStore_ERD.png). Tên bên trái là tên cột trong ERD; tên trong ngoặc là tên field Java khuyến nghị. Không tự thêm cột, khóa hoặc quan hệ chưa xuất hiện trong ERD. Danh sách đầy đủ theo dạng bảng và toàn bộ bội số quan hệ nằm tại [12 ERD LaptopStore](12-ERD-LaptopStore.md).
 
-**Rà soát:** 2026-10-01. ERD gồm **25 bảng, 192 cột, 30 FK và 14 ràng buộc UQ ngoài PK**. Có 24 bảng dùng PK `id`; `user_roles` dùng PK ghép `(user_id, role_id)`.
+**Rà soát:** 2026-11-21. Baseline ERD gồm **25 bảng, 192 cột, 30 FK và 14 ràng buộc UQ ngoài PK** (`V1__init_schema.sql`). Có 24 bảng dùng PK `id`; `user_roles` dùng PK ghép `(user_id, role_id)`. Từ migration `V10` đến `V13`, hệ thống đã bổ sung **6 bảng mở rộng** (tổng **31 bảng** vật lý, xem mục 13 bên dưới).
 
 Các mục 1–9 mô tả **baseline ERD**. Kiểu dữ liệu, ánh xạ JPA hiện có và các điểm lệch được tách riêng ở mục 10–12. [13 Phân quyền và chức năng](13-roles-and-functions.md) mô tả use case/quyền; danh sách chức năng không tự bổ sung bảng hoặc cột vào mô hình này.
 
@@ -284,3 +284,18 @@ Danh sách bảng/cột ở mục 1–9 khớp ảnh ERD hiện có; **không c�
 | [V1 init](../../src/main/resources/db/migration/V1__init_schema.sql) | Baseline gồm 25 bảng, 30 FK | V1 mới khởi tạo đủ 25 bảng/192 cột/30 FK/14 UQ, seed 3 role | Đã kiểm Flyway và Hibernate validate trên PostgreSQL 17 mới. Database đã chạy V1 identity cũ cần giữ V1 cũ và migration nâng cấp riêng, không thay checksum. |
 
 Bootstrap V1 mới và ánh xạ actor trong OrderStatusHistory đã được triển khai/kiểm thử trên database riêng. Các điểm lệch specification, UQ cart item, JPA xuyên module và state machine vẫn cần đồng bộ; kiểm thử schema không chứng minh các use case đó đã hoàn tất. Xem [quyết định V1 và database cũ](../../src/main/resources/db/migration/README.md).
+
+## 13. Mở rộng schema sau baseline ERD (`V10`–`V13`, cập nhật 2026-11-21)
+
+Các migration từ `V10` đến `V13` bổ sung các tính năng mở rộng ngoài baseline 25 bảng (tổng cộng **31 bảng**):
+
+| Migration | Bảng / Cột bổ sung | Module | Mô tả |
+|---|---|---|---|
+| `V10__create_loyalty_schema.sql` | `coupons.owner_user_id` (FK → `users.id`) | `promotion` | Gắn coupon cá nhân đổi từ điểm thưởng Loyalty |
+| `V10__create_loyalty_schema.sql` | `loyalty_accounts` (`id`, `user_id` UQ/FK, `points_balance`, `total_earned`, `total_redeemed`, `created_at`, `updated_at`) | `promotion` | Số dư & tổng điểm Loyalty của từng user |
+| `V10__create_loyalty_schema.sql` | `loyalty_transactions` (`id`, `user_id` FK, `type`, `points_delta`, `balance_after`, `reference_type`, `reference_id`, `operation_key` UQ, `description`, `created_at`) | `promotion` | Sổ cái tích/đổi điểm Loyalty chống trùng bằng `operation_key` |
+| `V11__add_cod_cancellation_requests.sql` | `orders.payment_method`, `orders.cancellation_request_reason` | `order` | Lưu phương thức thanh toán và lý do yêu cầu hủy đơn COD chờ duyệt |
+| `V12__create_refund_requests.sql` | `refund_requests` (`id`, `order_id` FK → `payments.order_id`, `amount`, `reason`, `status`, `created_at`, `reviewed_at`, `reviewed_by_user_id` FK, `review_note`, `credited_to_store_credit`) | `payment` | Yêu cầu hoàn tiền sau thanh toán/trả hàng do Admin duyệt |
+| `V12__create_refund_requests.sql` | `refund_request_evidence` (`id`, `refund_request_id` FK CASCADE, `content_type`, `content` BYTEA ≤ 5MB) | `payment` | Ảnh minh chứng (`image/jpeg`, `image/png`) đính kèm yêu cầu hoàn tiền |
+| `V13__create_store_credit.sql` | `store_credit_wallets` (`user_id` PK/FK → `users.id`, `balance`) | `payment` | Ví điểm/tiền hoàn `StoreCredit` dùng thanh toán đơn mới |
+| `V13__create_store_credit.sql` | `store_credit_entries` (`id`, `user_id` FK, `order_id` FK, `refund_request_id` UQ/FK, `kind`, `amount`, `balance_after`, `created_at`) | `payment` | Sổ cái cộng tiền hoàn (`REFUND`) và trừ tiền mua hàng (`PURCHASE`) |
