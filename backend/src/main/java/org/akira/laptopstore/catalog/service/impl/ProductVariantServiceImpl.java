@@ -45,14 +45,17 @@ public class ProductVariantServiceImpl implements ProductVariantService {
         Product parentProduct = productRepository.findById(productId)
                 .orElseThrow(() -> new ResourceNotFoundException("Lỗi: Không tìm thấy Product gốc với ID: " + productId));
 
-        // 2. Kiểm tra mã SKU đã tồn tại chưa (Dựa vào hàm existsBySku em đã viết)
-        if (productVariantRepository.existsBySku(request.getSku())) {
+        // 2. Kiểm tra mã SKU đã tồn tại chưa (Dựa vào hàm existsBySkuNative bỏ qua @SQLRestriction)
+        if (productVariantRepository.existsBySkuNative(request.getSku())) {
             throw new BusinessException(
                     HttpStatus.BAD_REQUEST,
                     "SKU_ALREADY_EXISTS",
                     "Mã SKU '" + request.getSku() + "' đã bị trùng. Vui lòng nhập mã khác!"
             );
         }
+
+        boolean isActive = resolveActiveStatus(request.getStatus());
+        String status = isActive ? "ACTIVE" : "INACTIVE";
 
         // 3. Khởi tạo Variant mới
         ProductVariant newVariant = ProductVariant.builder()
@@ -63,7 +66,8 @@ public class ProductVariantServiceImpl implements ProductVariantService {
                 .color(request.getColor())
                 .ram(request.getRam())
                 .storage(request.getStorage())
-                .status("ACTIVE") // hễ tạo mới là mặc định trạng thái hoạt động
+                .status(status)
+                .active(isActive)
                 .build();
 
         // 4. Lưu xuống Database
@@ -76,8 +80,8 @@ public class ProductVariantServiceImpl implements ProductVariantService {
     @Override
     @Transactional
     public VariantSnapshot updateVariant(Long productId, Long variantId, UpdateVariantRequest request) {
-        // 1. Kiểm tra Variant có tồn tại không
-        ProductVariant variant = productVariantRepository.findById(variantId)
+        // 1. Kiểm tra Variant có tồn tại không qua findByIdNative để hỗ trợ cả biến thể đang tạm ngừng bán (active = false)
+        ProductVariant variant = productVariantRepository.findByIdNative(variantId)
                 .orElseThrow(() -> new ResourceNotFoundException("Lỗi: Không tìm thấy biến thể với ID: " + variantId));
 
         // 2. Chốt chặn bảo mật: Variant này có đúng là thuộc về Product cha (productId) không?
@@ -89,9 +93,9 @@ public class ProductVariantServiceImpl implements ProductVariantService {
             );
         }
 
-        // 3. Kiểm tra trùng SKU (chỉ kiểm tra khi SKU gửi lên khác SKU hiện tại)
+        // 3. Kiểm tra trùng SKU (dùng existsBySkuAndIdNotNative để kiểm tra cả variant đang active = false)
         if (!variant.getSku().equalsIgnoreCase(request.getSku())) {
-            if (productVariantRepository.existsBySkuAndIdNot(request.getSku(), variantId)) {
+            if (productVariantRepository.existsBySkuAndIdNotNative(request.getSku(), variantId)) {
                 throw new BusinessException(
                         HttpStatus.BAD_REQUEST,
                         "SKU_ALREADY_EXISTS",
@@ -100,10 +104,14 @@ public class ProductVariantServiceImpl implements ProductVariantService {
             }
         }
 
-        // 4. Cập nhật dữ liệu vào Entity (sử dụng Setter, không build mới để giữ nguyên ID & Audit fields)
+        // 4. Cập nhật dữ liệu vào Entity (sử dụng Setter, đồng bộ cả active và status)
         variant.setSku(request.getSku());
         variant.setPrice(request.getPrice());
-        variant.setStatus(request.getStatus());
+        if (request.getStatus() != null) {
+            boolean isActive = resolveActiveStatus(request.getStatus());
+            variant.setStatus(isActive ? "ACTIVE" : "INACTIVE");
+            variant.setActive(isActive);
+        }
         variant.setColor(request.getColor());
         variant.setRam(request.getRam());
         variant.setStorage(request.getStorage());
@@ -118,8 +126,8 @@ public class ProductVariantServiceImpl implements ProductVariantService {
     @Override
     @Transactional
     public void updateVariantActiveStatus(Long productId, Long variantId, boolean isActive) {
-// Gọi thẳng hàm Native Query để update
-        int updatedRows = productVariantRepository.updateActiveStatus(productId, variantId, isActive);
+        String status = isActive ? "ACTIVE" : "INACTIVE";
+        int updatedRows = productVariantRepository.updateActiveStatusAndStatus(productId, variantId, isActive, status);
 
         // Nếu không có dòng nào được cập nhật, nghĩa là sai ID Variant hoặc sai ID Product
         if (updatedRows == 0) {
@@ -136,8 +144,20 @@ public class ProductVariantServiceImpl implements ProductVariantService {
             throw new ResourceNotFoundException("Lỗi: Không tìm thấy Product với ID: " + productId);
         }
 
-        // 2. Lấy danh sách Variant từ DB (đã tự động lọc active = true)
-        List<ProductVariant> variants = productVariantRepository.findByProductId(productId);
+        /*
+         * =========================================================================
+         * [TẠI SAO THAY ĐỔI & BẢN CHẤT NGHIỆP VỤ - getVariantsByProductId]:
+         * - Tại sao thay đổi: Chuyển từ `findByProductId` sang `findAllByProductIdNative`.
+         * - Giữ theo cách cũ: Do Hibernate `@SQLRestriction("active = true")` can thiệp,
+         *   các biến thể bị ngừng bán (active = false) sẽ bị ẩn hoàn toàn khỏi kết quả trả về.
+         *   Hậu quả: Quản trị viên vào trang quản trị không thấy biến thể đã tắt, không thể bật bán lại.
+         * - Xử lý theo cách mới được lợi gì:
+         *   Lấy toàn bộ biến thể kèm trường active, giúp Admin/Staff kiểm soát được toàn bộ danh mục cấu hình máy.
+         * =========================================================================
+         */
+        // 2. Lấy danh sách toàn bộ Variant từ DB (kể cả active = false cho Admin quản lý)
+        List<ProductVariant> variants = productVariantRepository.findAllByProductIdNative(productId);
+
 
         // 3. Map từ Entity sang DTO và trả về
         return variants.stream()
@@ -147,8 +167,8 @@ public class ProductVariantServiceImpl implements ProductVariantService {
 
     @Override
     public VariantSnapshot getVariantById(Long productId, Long variantId) {
-        // 1. Tìm Variant theo ID
-        ProductVariant variant = productVariantRepository.findById(variantId)
+        // 1. Tìm Variant theo ID (dùng findByIdNative để hỗ trợ cả biến thể tạm ngừng bán)
+        ProductVariant variant = productVariantRepository.findByIdNative(variantId)
                 .orElseThrow(() -> new ResourceNotFoundException("Lỗi: Không tìm thấy Variant với ID: " + variantId));
 
         // 2. Kiểm tra chéo: Variant này có đúng là của Product này không?
@@ -162,6 +182,24 @@ public class ProductVariantServiceImpl implements ProductVariantService {
 
         // 3. Map sang DTO và trả về
         return productMapper.toVariantSnapshot(variant);
+    }
+
+    private boolean resolveActiveStatus(String rawStatus) {
+        if (rawStatus == null) {
+            return true;
+        }
+        String normalized = rawStatus.trim();
+        if ("ACTIVE".equalsIgnoreCase(normalized)) {
+            return true;
+        }
+        if ("INACTIVE".equalsIgnoreCase(normalized)) {
+            return false;
+        }
+        throw new BusinessException(
+                HttpStatus.BAD_REQUEST,
+                "INVALID_VARIANT_STATUS",
+                "Trạng thái biến thể không hợp lệ: '" + rawStatus + "'. Chỉ chấp nhận ACTIVE hoặc INACTIVE."
+        );
     }
 
 }

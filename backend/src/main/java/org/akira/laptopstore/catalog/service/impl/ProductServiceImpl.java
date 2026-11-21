@@ -33,6 +33,10 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.akira.laptopstore.catalog.dto.response.ProductImageDto;
+import org.akira.laptopstore.catalog.dto.request.UpdateProductImageRequest;
+import org.akira.laptopstore.catalog.entity.ProductImage;
+import java.util.ArrayList;
+import java.util.Collections;
 import org.akira.laptopstore.catalog.dto.response.ProductResponse;
 import org.akira.laptopstore.catalog.dto.response.ProductSpecificationDto;
 import org.akira.laptopstore.catalog.dto.response.ProductSummaryResponse;
@@ -218,6 +222,78 @@ public class ProductServiceImpl implements ProductService {
         // Gọi repository lấy danh sách ảnh theo productId và map sang DTO
         return productMapper.toProductImageDtoList(productImageRepository.findByProductId(productId));
     }
+
+    /*
+     * =========================================================================
+     * [TẠI SAO THAY ĐỔI & BẢN CHẤT NGHIỆP VỤ - updateProductImages]:
+     * 1. Tại sao thay đổi:
+     *    - Cập nhật toàn bộ bộ sưu tập hình ảnh của một sản phẩm trong một Transaction nguyên tử (@Transactional).
+     *    - Đảm bảo 1 sản phẩm có thể lưu nhiều ảnh (mặt lưng, bàn phím, màn hình, cổng kết nối).
+     * 2. Giữ theo cách cũ thì ảnh hưởng xấu gì:
+     *    - Thiếu logic đồng bộ nguyên tử: nếu chỉ thêm mới mà không dọn dẹp hoặc không kiểm soát `isPrimary`,
+     *      dữ liệu ảnh sẽ bị phân mảnh, có thể xảy ra trường hợp nhiều ảnh cùng là `isPrimary = true`
+     *      hoặc không có ảnh nào là đại diện, làm vỡ giao diện ProductCard ngoài cửa hàng.
+     * 3. Xử lý theo cách mới được lợi gì:
+     *    - Bước 1: Xóa sạch bộ ảnh cũ của sản phẩm đó.
+     *    - Bước 2: Lưu danh sách ảnh mới, chỉ cho phép DUY NHẤT một ảnh có `isPrimary = true`.
+     *    - Fallback thông minh: Nếu admin quên chọn ảnh chính, tự động lấy ảnh đầu tiên làm `isPrimary = true`.
+     *    - Dữ liệu luôn nhất quán, sạch sẽ và trả về danh sách DTO đã được chuẩn hóa.
+     * =========================================================================
+     */
+    @Override
+    @Transactional
+    public List<ProductImageDto> updateProductImages(Long productId, List<UpdateProductImageRequest> imageDtos) {
+        Product product = productRepository.findById(productId)
+                .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy sản phẩm với ID: " + productId));
+
+        if (imageDtos == null) {
+            imageDtos = Collections.emptyList();
+        }
+
+        // Validate và kiểm tra từng phần tử ảnh
+        int primaryIndex = -1;
+        for (int i = 0; i < imageDtos.size(); i++) {
+            UpdateProductImageRequest dto = imageDtos.get(i);
+            if (dto == null || !StringUtils.hasText(dto.getImageUrl())) {
+                throw new BusinessException(HttpStatus.BAD_REQUEST, "INVALID_IMAGE_URL", "Đường dẫn ảnh không được để trống");
+            }
+            String trimmedUrl = dto.getImageUrl().trim();
+            if (!trimmedUrl.startsWith("/uploads/") && !trimmedUrl.startsWith("http://") && !trimmedUrl.startsWith("https://")) {
+                throw new BusinessException(HttpStatus.BAD_REQUEST, "INVALID_IMAGE_URL", "Đường dẫn ảnh phải bắt đầu bằng /uploads/, http:// hoặc https://");
+            }
+            if (primaryIndex == -1 && Boolean.TRUE.equals(dto.getIsPrimary())) {
+                primaryIndex = i;
+            }
+        }
+
+        // Nếu danh sách không rỗng và chưa có ảnh nào là primary -> tự chọn ảnh đầu tiên
+        if (primaryIndex == -1 && !imageDtos.isEmpty()) {
+            primaryIndex = 0;
+        }
+
+        // Chuẩn hóa danh sách ProductImage mới trong bộ nhớ
+        List<ProductImage> newImages = new ArrayList<>();
+        for (int i = 0; i < imageDtos.size(); i++) {
+            UpdateProductImageRequest dto = imageDtos.get(i);
+            newImages.add(ProductImage.builder()
+                    .product(product)
+                    .imageUrl(dto.getImageUrl().trim())
+                    .isPrimary(i == primaryIndex)
+                    .build());
+        }
+
+        // 1. Xóa toàn bộ ảnh cũ bằng batch xóa nhanh
+        List<ProductImage> oldImages = productImageRepository.findByProductId(productId);
+        if (!oldImages.isEmpty()) {
+            productImageRepository.deleteAllInBatch(oldImages);
+        }
+
+        // 2. Lưu danh sách ảnh mới và trả về DTO trực tiếp (không query lặp lại)
+        List<ProductImage> saved = newImages.isEmpty() ? Collections.emptyList() : productImageRepository.saveAll(newImages);
+        return productMapper.toProductImageDtoList(saved);
+    }
+
+
 
     @Override
     public ProductSpecificationDto getProductSpecification(Long productId) {

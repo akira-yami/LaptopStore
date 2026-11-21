@@ -1,7 +1,14 @@
 // src/modules/catalog/types/index.ts
 
+/**
+ * DTO hình ảnh sản phẩm.
+ * - Tại sao id là optional (id?: number): Khi người dùng thêm ảnh mới ở client trước khi bấm Lưu,
+ *   ảnh chưa có ID sinh từ cơ sở dữ liệu. Sau khi lưu thành công hoặc khi đọc từ backend, id mới có giá trị.
+ * - Giữ theo cách cũ (bắt buộc id: number): Sẽ buộc client phải gán id giả lập, gây lỗi biên dịch TypeScript TS2741.
+ * - Xử lý theo cách mới: Type-safe, linh hoạt cho cả form thêm mới lẫn hiển thị.
+ */
 export interface ProductImageDto {
-    id: number;
+    id?: number;
     imageUrl: string;
     isPrimary: boolean;
 }
@@ -26,7 +33,14 @@ export interface VariantSnapshot {
     price: number;
     quantity: number;
     status: string;
+    /**
+     * Trạng thái kinh doanh của biến thể (true: Đang bán, false: Ngừng bán).
+     * Bổ sung để hỗ trợ hiển thị Badge và nút gạt trạng thái trong AdminProductPage.
+     */
+    active?: boolean;
 }
+
+
 
 export interface ProductSummaryResponse {
     id: number;

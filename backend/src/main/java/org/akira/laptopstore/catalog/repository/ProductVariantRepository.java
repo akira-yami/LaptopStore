@@ -25,11 +25,34 @@ public interface ProductVariantRepository extends JpaRepository<ProductVariant, 
     // Nhờ có @SQLRestriction("active = true") ở Entity, hàm này sẽ tự động KHÔNG lấy các Variant đã bị Deactivate!
     List<ProductVariant> findByProductId(Long productId);
 
+    /*
+     * =========================================================================
+     * [TẠI SAO THAY ĐỔI & BẢN CHẤT NGHIỆP VỤ - findAllByProductIdNative]:
+     * - Tại sao thay đổi: Dùng Native SQL để lấy TOÀN BỘ biến thể của sản phẩm (bao gồm cả active = false).
+     * - Giữ theo cách cũ (findByProductId): Do entity ProductVariant có gắn `@SQLRestriction("active = true")`,
+     *   mọi câu lệnh Spring Data JPA thông thường đều tự động chèn mệnh đề `WHERE active = true`. Khi đó,
+     *   nhân viên hoặc admin sẽ KHÔNG THỂ NHÌN THẤY các biến thể đã bị tạm tắt bán, dẫn đến không thể kích hoạt lại.
+     * - Xử lý theo cách mới được lợi gì:
+     *   Bỏ qua restriction Hibernate, cho phép quản trị viên xem danh sách đầy đủ để quản lý và bật bán lại khi có hàng.
+     * =========================================================================
+     */
+    @Query(value = "SELECT * FROM product_variants WHERE product_id = :productId ORDER BY id ASC", nativeQuery = true)
+    List<ProductVariant> findAllByProductIdNative(@Param("productId") Long productId);
+
+    @Query(value = "SELECT * FROM product_variants WHERE id = :variantId", nativeQuery = true)
+    Optional<ProductVariant> findByIdNative(@Param("variantId") Long variantId);
+
     boolean existsBySku(String sku);
+
+    @Query(value = "SELECT COUNT(*) > 0 FROM product_variants WHERE LOWER(sku) = LOWER(:sku)", nativeQuery = true)
+    boolean existsBySkuNative(@Param("sku") String sku);
 
     //Kiểm tra SKU trùng, nhưng bỏ qua Variant đang được cập nhật
     //Kiểm tra SKU đã tồn tại ở bản ghi khác (khác id hiện tại)
     boolean existsBySkuAndIdNot(String sku, Long id);
+
+    @Query(value = "SELECT COUNT(*) > 0 FROM product_variants WHERE LOWER(sku) = LOWER(:sku) AND id != :variantId", nativeQuery = true)
+    boolean existsBySkuAndIdNotNative(@Param("sku") String sku, @Param("variantId") Long variantId);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select variant from ProductVariant variant join fetch variant.product where variant.id in :variantIds order by variant.id")
@@ -39,6 +62,10 @@ public interface ProductVariantRepository extends JpaRepository<ProductVariant, 
     @Modifying
     @Query(value = "UPDATE product_variants SET active = :isActive WHERE id = :variantId AND product_id = :productId", nativeQuery = true)
     int updateActiveStatus(@Param("productId") Long productId, @Param("variantId") Long variantId, @Param("isActive") boolean isActive);
+
+    @Modifying
+    @Query(value = "UPDATE product_variants SET active = :isActive, status = :status WHERE id = :variantId AND product_id = :productId", nativeQuery = true)
+    int updateActiveStatusAndStatus(@Param("productId") Long productId, @Param("variantId") Long variantId, @Param("isActive") boolean isActive, @Param("status") String status);
 
     // --- BỔ SUNG CHO INVENTORY QUERY CONTRACT ---
 

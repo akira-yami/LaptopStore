@@ -12,9 +12,15 @@ const adminNavigation: { label: string; links: { to: string; label: string; icon
       { to: ADMIN_HOME, label: 'Tổng quan', icon: 'grid' },
       { to: '/admin/products', label: 'Sản phẩm', icon: 'laptop' },
       { to: '/admin/categories', label: 'Danh mục', icon: 'tag' },
+      /*
+       * [TẠI SAO THAY ĐỔI]: Thêm link Thương hiệu vào sidebar Admin và đổi icon Users cho Người dùng
+       * để phân biệt với icon Shield của Thương hiệu. Giữ cách cũ Admin không có lối tắt truy cập hãng máy.
+       */
+      { to: '/admin/brands', label: 'Thương hiệu', icon: 'shield' },
       { to: '/admin/promotions', label: 'Khuyến mãi', icon: 'wallet' },
-      { to: '/admin/users', label: 'Người dùng', icon: 'shield' },
+      { to: '/admin/users', label: 'Người dùng', icon: 'users' },
     ],
+
   },
   {
     label: 'Kiểm soát vận hành',

@@ -27,11 +27,20 @@ public class BrandServiceImpl implements BrandService {
 
     @Override
     public List<BrandResponse> findAllBrands() {
-        // Lấy danh sách từ DB, stream qua Mapper để chuyển thành list DTO siêu ngắn gọn
+        // Lấy danh sách từ DB (chỉ active = true nhờ @SQLRestriction)
         return brandRepository.findAll()
                 .stream()
-                .map(brandMapper::toResponse) // Gọi Mapper ở đây
-                .toList(); // Hoặc .collect(Collectors.toList())
+                .map(brandMapper::toResponse)
+                .toList();
+    }
+
+    @Override
+    public List<BrandResponse> findAllBrandsForAdmin() {
+        // Lấy toàn bộ thương hiệu (kể cả active = false / tạm ẩn) cho Admin/Staff
+        return brandRepository.findAllIncludeInactive()
+                .stream()
+                .map(brandMapper::toResponse)
+                .toList();
     }
 
     @Override
@@ -39,15 +48,14 @@ public class BrandServiceImpl implements BrandService {
         Brand brand = brandRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy thương hiệu với ID: " + id));
         
-        // Gọi Mapper để trả về
         return brandMapper.toResponse(brand);
     }
     
     @Override
     @Transactional
     public BrandResponse createBrand(CreateBrandRequest request) {
-        // 1. Chốt chặn: Kiểm tra tên Brand đã tồn tại chưa
-        if (brandRepository.existsByName(request.getName())) {
+        // 1. Chốt chặn: Kiểm tra tên Brand đã tồn tại chưa (dùng native query để quét cả bản ghi ẩn)
+        if (brandRepository.existsByNameNative(request.getName().trim())) {
             throw new BusinessException(
                 org.springframework.http.HttpStatus.BAD_REQUEST, 
                 "BRAND_NAME_ALREADY_EXISTS", 
@@ -57,27 +65,25 @@ public class BrandServiceImpl implements BrandService {
 
         // 2. Map dữ liệu và lưu
         Brand brand = Brand.builder()
-                .name(request.getName())
+                .name(request.getName().trim())
                 .description(request.getDescription())
-                .active(true) // Luôn active khi tạo mới
+                .active(true)
                 .build();
 
         Brand savedBrand = brandRepository.save(brand);
-        
-        // 3. Map sang Response DTO (Sử dụng mapper của em)
         return brandMapper.toResponse(savedBrand); 
     }
 
     @Override
     @Transactional
     public BrandResponse updateBrand(Long id, UpdateBrandRequest request) {
-        // 1. Tìm Brand cần update
-        Brand existingBrand = brandRepository.findById(id)
+        // 1. Tìm Brand cần update (hỗ trợ cả brand đang tạm ẩn)
+        Brand existingBrand = brandRepository.findByIdNative(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy thương hiệu với ID: " + id));
 
         // 2. Chốt chặn: Nếu tên bị đổi, kiểm tra xem có trùng với hãng KHÁC không
-        if (!existingBrand.getName().equalsIgnoreCase(request.getName())) {
-            if (brandRepository.existsByNameAndIdNot(request.getName(), id)) {
+        if (!existingBrand.getName().equalsIgnoreCase(request.getName().trim())) {
+            if (brandRepository.existsByNameAndIdNotNative(request.getName().trim(), id)) {
                 throw new BusinessException(
                     org.springframework.http.HttpStatus.BAD_REQUEST, 
                     "BRAND_NAME_ALREADY_EXISTS", 
@@ -86,12 +92,20 @@ public class BrandServiceImpl implements BrandService {
             }
         }
 
-        // 3. Cập nhật dữ liệu (Dùng Setter, không dùng Builder)
-        existingBrand.setName(request.getName());
+        existingBrand.setName(request.getName().trim());
         existingBrand.setDescription(request.getDescription());
 
         Brand updatedBrand = brandRepository.save(existingBrand);
         return brandMapper.toResponse(updatedBrand);
+    }
+
+    @Override
+    @Transactional
+    public void updateBrandStatus(Long id, boolean active) {
+        int updated = brandRepository.updateActiveStatus(id, active);
+        if (updated == 0) {
+            throw new ResourceNotFoundException("Không tìm thấy thương hiệu với ID: " + id);
+        }
     }
 
     @Override

@@ -12,6 +12,7 @@ import { RoleBasedRoute } from './RoleBasedRoute';
 import { ADMIN_HOME, STAFF_HOME, toAdminWorkspacePath } from './workspacePaths';
 
 // Catalog
+import AdminBrandPage from '@/modules/catalog/pages/admin/AdminBrandPage';
 import AdminCategoryPage from '@/modules/catalog/pages/admin/AdminCategoryPage';
 import AdminProductPage from '@/modules/catalog/pages/admin/AdminProductPage';
 import { HomeUser } from '@/modules/catalog/pages/user/HomeUser';
@@ -67,12 +68,30 @@ const ScrollToTop: React.FC = () => {
   return null;
 };
 
+/*
+ * =========================================================================
+ * [TẠI SAO THAY ĐỔI & BẢN CHẤT NGHIỆP VỤ - operationPages trong AppRouter]:
+ * - Tại sao thay đổi: Đưa AdminProductPage và AdminBrandPage vào danh sách `operationPages`
+ *   và đăng ký route `/admin/brands`.
+ * - Giữ theo cách cũ: Staff không có đường dẫn `/staff/brands` hay `/staff/products` trong ca làm việc,
+ *   chỉ Admin mới có route. Khi Staff bấm vào menu sản phẩm/thương hiệu sẽ bị điều hướng ra trang 404 hoặc STAFF_HOME.
+ * - Xử lý theo cách mới được lợi gì:
+ *   Cả Admin (tại `/admin/brands`, `/admin/products`) lẫn Staff (tại `/staff/brands`, `/staff/products`)
+ *   đều có thể mở đúng màn hình quản trị phù hợp với phân quyền mới.
+ * =========================================================================
+ */
 const operationPages = [
+  { path: 'products', Page: AdminProductPage },
+  { path: 'brands', Page: AdminBrandPage },
+  { path: 'categories', Page: AdminCategoryPage },
   { path: 'inventory', Page: InventoryPage },
   { path: 'procurement', Page: PurchaseOrderListPage },
   { path: 'suppliers', Page: SupplierListPage },
   { path: 'reviews', Page: StaffReviewPage },
 ];
+
+
+
 
 const StaffWorkspaceEntry: React.FC = () => {
   const { user } = useAuth();
@@ -138,8 +157,6 @@ export const AppRouter: React.FC = () => (
               <Route index element={<Navigate to={ADMIN_HOME} replace />} />
               <Route path="dashboard" element={<OpsDashboardPage workspace="admin" />} />
               <Route path="orders" element={<StaffOrderListPage canReviewReturns />} />
-              <Route path="products" element={<AdminProductPage />} />
-              <Route path="categories" element={<AdminCategoryPage />} />
               <Route path="promotions/*" element={<PromotionRoutes />} />
               <Route path="users" element={<AdminUserListPage />} />
               <Route path="refund-requests" element={<AdminRefundRequestsPage />} />

@@ -14,29 +14,40 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.security.access.prepost.PreAuthorize;
 
+import org.akira.laptopstore.catalog.dto.request.UpdateProductImageRequest;
 import org.akira.laptopstore.catalog.dto.request.UpdateProductRequest;
 import org.akira.laptopstore.catalog.dto.request.UpdateVariantRequest;
+import org.akira.laptopstore.catalog.dto.response.ProductImageDto;
 import org.akira.laptopstore.catalog.dto.response.ProductResponse;
 import org.akira.laptopstore.catalog.dto.response.VariantSnapshot;
 import org.akira.laptopstore.catalog.mapper.ProductMapper;
+import org.springframework.validation.annotation.Validated;
 
 import java.util.List;
 
+/*
+ * =========================================================================
+ * [TẠI SAO THAY ĐỔI & BẢN CHẤT NGHIỆP VỤ - AdminProductController]:
+ * 1. Tại sao thay đổi:
+ *    - Phân quyền @PreAuthorize("hasAnyRole('STAFF', 'ADMIN')") để nhân viên bán hàng / thủ kho
+ *      có thể cùng tham gia quản trị thông tin cấu hình sản phẩm và tình trạng tồn/bán.
+ *    - Bổ sung endpoint PUT `/{productId}/images` hỗ trợ lưu bộ sưu tập nhiều ảnh cho 1 sản phẩm.
+ * 2. Giữ theo cách cũ thì ảnh hưởng xấu gì:
+ *    - Cách cũ khóa cứng hasRole('ADMIN'), nhân viên Staff không thể hỗ trợ cập nhật cấu hình hoặc hình ảnh.
+ *    - Trước đây không có API cập nhật danh sách ảnh cho sản phẩm đã tồn tại, dẫn đến việc sản phẩm
+ *      chỉ có 1 ảnh thumbnail hoặc không thể bổ sung ảnh góc cạnh/chi tiết laptop từ trang quản trị.
+ * 3. Xử lý theo cách mới được lợi gì:
+ *    - Quản lý tập trung sản phẩm, biến thể (variant) và bộ ảnh đa góc nhìn (gallery) qua RESTful API chuẩn.
+ * =========================================================================
+ */
+@Validated
 @RestController
 @RequestMapping("/api/v1/admin/products")
 @RequiredArgsConstructor
-@PreAuthorize("hasRole('ADMIN')") // <-- THÊM DÒNG NÀY ĐỂ BẢO VỆ TOÀN BỘ CLASS
-/*
-======================== ĐÃ XÓA CODE CŨ VÀ CẬP NHẬP CODE MỚI - Annotation @PreAuthorize =======================
-*Trong Spring Security, việc cấu hình chặn URL ở SecurityConfig (như requestMatchers("/api/v1/admin/**").hasRole("ADMIN")) là lớp khiên thứ nhất.
-*Lớp khiên thứ hai là bảo vệ trực tiếp trên hàm/class bằng @PreAuthorize (Method Security).
-Đã gắn @PreAuthorize("hasRole('ADMIN')") ở các hàm như updateProduct, createVariant... Rất tốt!
-→ NHƯNG lại quên gắn ở createProduct, getAllProducts, toggleProductStatus.
-→ Nếu sau này có ai đó lỡ tay sửa URL trong SecurityConfig, các API tạo sản phẩm này sẽ bị hổng toàn bộ.
-    + Kéo lên đầu file, thêm @PreAuthorize("hasRole('ADMIN')") ngay trước khai báo lớp `public class AdminProductController`
-    + Xóa hết các dòng @PreAuthorize("hasRole('ADMIN')") đang nằm lẻ tẻ ở các hàm bên dưới để code sạch đẹp hơn.
-*/
+@PreAuthorize("hasAnyRole('STAFF', 'ADMIN')")
 public class AdminProductController {
+
+
 
     private final ProductService productService;
     private final ProductMapper productMapper;
@@ -142,4 +153,19 @@ public class AdminProductController {
         VariantSnapshot response = productVariantService.getVariantById(productId, variantId);
         return ResponseEntity.ok(response);
     }
+
+    // ==========================================
+    // QUẢN LÝ BỘ SƯU TẬP HÌNH ẢNH SẢN PHẨM (MULTI-IMAGE MANAGEMENT)
+    // - Cho phép lưu trữ và cập nhật nhiều ảnh cho một sản phẩm (mặt trước, bàn phím, cổng kết nối).
+    // - Tự động thiết lập ảnh đại diện isPrimary và bảo đảm tính nhất quán nguyên tử.
+    // ==========================================
+    @PutMapping("/{productId}/images")
+    public ResponseEntity<List<ProductImageDto>> updateProductImages(
+            @PathVariable Long productId,
+            @Valid @RequestBody List<@Valid UpdateProductImageRequest> images) {
+
+        List<ProductImageDto> response = productService.updateProductImages(productId, images);
+        return ResponseEntity.ok(response);
+    }
+
 }

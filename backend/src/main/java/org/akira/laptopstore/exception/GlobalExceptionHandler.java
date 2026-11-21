@@ -1,12 +1,16 @@
 package org.akira.laptopstore.exception;
 
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.ConstraintViolationException;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
@@ -26,5 +30,69 @@ public class GlobalExceptionHandler {
                 List.of()
         );
         return ResponseEntity.status(exception.getStatus()).body(response);
+    }
+
+    @ExceptionHandler(ResourceNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleResourceNotFoundException(
+            ResourceNotFoundException exception,
+            HttpServletRequest request
+    ) {
+        ErrorResponse response = new ErrorResponse(
+                Instant.now(),
+                HttpStatus.NOT_FOUND.value(),
+                "RESOURCE_NOT_FOUND",
+                exception.getMessage(),
+                request.getRequestURI(),
+                null,
+                List.of()
+        );
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(response);
+    }
+
+    @ExceptionHandler(ConstraintViolationException.class)
+    public ResponseEntity<ErrorResponse> handleConstraintViolationException(
+            ConstraintViolationException exception,
+            HttpServletRequest request
+    ) {
+        ErrorResponse response = new ErrorResponse(
+                Instant.now(),
+                HttpStatus.BAD_REQUEST.value(),
+                "VALIDATION_ERROR",
+                exception.getMessage(),
+                request.getRequestURI(),
+                null,
+                List.of()
+        );
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
+    }
+
+    @ExceptionHandler(MethodArgumentNotValidException.class)
+    public ResponseEntity<ErrorResponse> handleMethodArgumentNotValidException(
+            MethodArgumentNotValidException exception,
+            HttpServletRequest request
+    ) {
+        List<Object> fieldErrors = exception.getBindingResult().getFieldErrors().stream()
+                .map(fe -> (Object) Map.of(
+                        "field", fe.getField(),
+                        "message", fe.getDefaultMessage() != null ? fe.getDefaultMessage() : "Giá trị không hợp lệ"
+                ))
+                .toList();
+
+        String primaryMessage = exception.getBindingResult().getFieldErrors().stream()
+                .map(fe -> fe.getDefaultMessage())
+                .filter(msg -> msg != null && !msg.isBlank())
+                .findFirst()
+                .orElse("Dữ liệu đầu vào không hợp lệ");
+
+        ErrorResponse response = new ErrorResponse(
+                Instant.now(),
+                HttpStatus.BAD_REQUEST.value(),
+                "VALIDATION_ERROR",
+                primaryMessage,
+                request.getRequestURI(),
+                null,
+                fieldErrors
+        );
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
     }
 }

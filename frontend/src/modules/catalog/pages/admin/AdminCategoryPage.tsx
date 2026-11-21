@@ -20,7 +20,7 @@ export const AdminCategoryPage: React.FC = () => {
     setLoading(true);
     setError(null);
     try {
-      setCategories(await categoryApi.getAllCategories());
+      setCategories(await categoryApi.getAdminCategories());
     } catch (err: unknown) {
       setError(apiErrorMessage(err, 'Không thể tải danh sách danh mục.'));
     } finally {
@@ -68,11 +68,21 @@ export const AdminCategoryPage: React.FC = () => {
     if (!deleting) return;
     try {
       await categoryApi.deleteCategory(deleting.id);
-      toast(`Đã xóa danh mục “${deleting.name}”.`);
+      toast(`Đã tạm ẩn danh mục “${deleting.name}”.`);
       setDeleting(null);
       await fetchCategories();
     } catch (err: unknown) {
       toast(apiErrorMessage(err, 'Xóa danh mục thất bại. Danh mục có thể đang có sản phẩm.'), { tone: 'error' });
+    }
+  };
+
+  const handleReactivate = async (cat: Category) => {
+    try {
+      await categoryApi.updateCategoryStatus(cat.id, true);
+      toast(`Đã kích hoạt lại danh mục “${cat.name}”.`);
+      await fetchCategories();
+    } catch (err: unknown) {
+      toast(apiErrorMessage(err, 'Kích hoạt lại danh mục thất bại.'), { tone: 'error' });
     }
   };
 
@@ -101,7 +111,11 @@ export const AdminCategoryPage: React.FC = () => {
                     <td>
                       <div className="row" style={{ justifyContent: 'flex-end', gap: 8 }}>
                         <button type="button" className="btn sm" onClick={() => openModal(cat)}><Icon name="edit" /> Sửa</button>
-                        <button type="button" className="btn sm danger" onClick={() => setDeleting(cat)}><Icon name="trash" /> Xóa</button>
+                        {cat.active ? (
+                          <button type="button" className="btn sm danger" onClick={() => setDeleting(cat)}><Icon name="trash" /> Xóa</button>
+                        ) : (
+                          <button type="button" className="btn sm soft" onClick={() => void handleReactivate(cat)}><Icon name="refresh" /> Kích hoạt lại</button>
+                        )}
                       </div>
                     </td>
                   </tr>
