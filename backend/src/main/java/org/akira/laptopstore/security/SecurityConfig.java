@@ -1,9 +1,11 @@
 package org.akira.laptopstore.security;
 
 import java.security.SecureRandom;
+import java.util.Arrays;
 import java.util.List;
 
 import org.akira.laptopstore.security.filter.JwtAuthenticationFilter;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -29,9 +31,17 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public class SecurityConfig {
 
+    private static final List<String> DEFAULT_ALLOWED_ORIGIN_PATTERNS = List.of(
+            "http://localhost:5173",
+            "http://localhost:3000",
+            "http://127.0.0.1:*");
+
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
     private final JwtAuthenticationEntryPoint authenticationEntryPoint;
     private final CustomAccessDeniedHandler accessDeniedHandler;
+
+    @Value("${app.cors.allowed-origin-patterns:http://localhost:5173,http://localhost:3000,http://127.0.0.1:*}")
+    private String allowedOriginPatterns;
 
     @Bean
     public SecureRandom secureRandom() {
@@ -63,8 +73,9 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/v1/products/**", "/api/v1/brands/**",
                                 "/api/v1/categories/**", "/api/v1/reviews/**")
                         .permitAll()
-                        // Ảnh sản phẩm tĩnh: thẻ <img> không gửi JWT nên phải public (chỉ GET)
+                        // Ảnh sản phẩm tĩnh: thẻ <img> không gửi JWT nên phải public (GET/HEAD)
                         .requestMatchers(HttpMethod.GET, "/uploads/**").permitAll()
+                        .requestMatchers(HttpMethod.HEAD, "/uploads/**").permitAll()
                         // VNPay không có JWT của user trong hệ thống
                         .requestMatchers(
                                 "/api/v1/payments/vnpay/ipn",
@@ -86,8 +97,11 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
-        config.setAllowedOriginPatterns(
-                List.of("http://localhost:5173", "http://localhost:3000", "http://127.0.0.1:*"));
+        List<String> origins = Arrays.stream((allowedOriginPatterns == null ? "" : allowedOriginPatterns).split(","))
+                .map(String::trim)
+                .filter(s -> !s.isEmpty())
+                .toList();
+        config.setAllowedOriginPatterns(origins.isEmpty() ? DEFAULT_ALLOWED_ORIGIN_PATTERNS : origins);
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         config.setAllowedHeaders(List.of("*"));
         config.setAllowCredentials(true);

@@ -32,6 +32,7 @@ provider callbacks (VNPay IPN).
 - `SPRING_PROFILES_ACTIVE=prod`
 - `SPRING_JPA_SHOW_SQL=false`
 - `AUTH_COOKIE_SECURE=true`
+- `CORS_ALLOWED_ORIGIN_PATTERNS=https://${{web.RAILWAY_PUBLIC_DOMAIN}},https://${{api.RAILWAY_PUBLIC_DOMAIN}},http://localhost:5173,http://localhost:3000,http://127.0.0.1:*`
 - `UPLOAD_DIR=/app/uploads`
 - `AI_ENABLED=false` until an API key is provisioned
 - `VNPAY_RETURN_URL=https://<web-domain>/payment/vnpay-return`
