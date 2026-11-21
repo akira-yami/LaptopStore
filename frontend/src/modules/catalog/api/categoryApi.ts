@@ -7,6 +7,11 @@ export const categoryApi = {
     return response.data;
   },
 
+  getAdminCategories: async (): Promise<Category[]> => {
+    const response = await apiClient.get<Category[]>('/api/v1/admin/categories');
+    return response.data;
+  },
+
   getCategoryById: async (id: number): Promise<Category> => {
     const response = await apiClient.get<Category>(`/api/v1/categories/${id}`);
     return response.data;
@@ -24,6 +29,13 @@ export const categoryApi = {
 
   deleteCategory: async (id: number): Promise<string> => {
     const response = await apiClient.delete<string>(`/api/v1/admin/categories/${id}`);
+    return response.data;
+  },
+
+  updateCategoryStatus: async (id: number, active: boolean): Promise<string> => {
+    const response = await apiClient.patch<string>(`/api/v1/admin/categories/${id}/status`, null, {
+      params: { active },
+    });
     return response.data;
   },
 };

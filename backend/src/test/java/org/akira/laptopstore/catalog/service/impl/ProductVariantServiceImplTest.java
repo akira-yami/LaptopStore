@@ -156,4 +156,52 @@ class ProductVariantServiceImplTest {
         assertEquals(false, result.getActive());
         verify(productVariantRepository).findByIdNative(10L);
     }
+
+    @Test
+    @DisplayName("Tạo hoặc cập nhật biến thể với status không hợp lệ (không phải ACTIVE/INACTIVE) -> ném BusinessException 400")
+    void createOrUpdateVariant_invalidStatus_throws400() {
+        when(productRepository.findById(1L)).thenReturn(Optional.of(sampleProduct));
+        when(productVariantRepository.existsBySkuNative("DELL-NEW-99")).thenReturn(false);
+
+        CreateVariantRequest createReq = CreateVariantRequest.builder()
+                .productId(1L)
+                .sku("DELL-NEW-99")
+                .variantName("16GB - 512GB")
+                .price(BigDecimal.valueOf(25000000))
+                .ram("16GB")
+                .storage("512GB")
+                .color("Bạc")
+                .status("INVALID_STATE")
+                .build();
+
+        BusinessException createEx = assertThrows(BusinessException.class,
+                () -> productVariantService.createVariant(1L, createReq));
+        assertEquals(HttpStatus.BAD_REQUEST, createEx.getStatus());
+        assertEquals("INVALID_VARIANT_STATUS", createEx.getCode());
+
+        ProductVariant existing = ProductVariant.builder()
+                .id(10L)
+                .product(sampleProduct)
+                .sku("DELL-OLD-01")
+                .price(BigDecimal.valueOf(20000000))
+                .active(true)
+                .status("ACTIVE")
+                .build();
+        when(productVariantRepository.findByIdNative(10L)).thenReturn(Optional.of(existing));
+
+        UpdateVariantRequest updateReq = UpdateVariantRequest.builder()
+                .sku("DELL-OLD-01")
+                .variantName("16GB - 512GB")
+                .price(BigDecimal.valueOf(21000000))
+                .ram("16GB")
+                .storage("512GB")
+                .color("Bạc")
+                .status("UNKNOWN")
+                .build();
+
+        BusinessException updateEx = assertThrows(BusinessException.class,
+                () -> productVariantService.updateVariant(1L, 10L, updateReq));
+        assertEquals(HttpStatus.BAD_REQUEST, updateEx.getStatus());
+        assertEquals("INVALID_VARIANT_STATUS", updateEx.getCode());
+    }
 }

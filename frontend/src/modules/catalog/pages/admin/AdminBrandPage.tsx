@@ -84,11 +84,21 @@ export const AdminBrandPage: React.FC = () => {
     if (!deleting) return;
     try {
       await brandApi.deleteBrand(deleting.id);
-      toast(`Đã xóa thương hiệu “${deleting.name}”.`);
+      toast(`Đã tạm ẩn thương hiệu “${deleting.name}”.`);
       setDeleting(null);
       await fetchBrands();
     } catch (err: unknown) {
       toast(apiErrorMessage(err, 'Xóa thương hiệu thất bại. Hãng có thể đang có sản phẩm.'), { tone: 'error' });
+    }
+  };
+
+  const handleReactivate = async (brand: Brand) => {
+    try {
+      await brandApi.updateBrandStatus(brand.id, true);
+      toast(`Đã kích hoạt lại thương hiệu “${brand.name}”.`);
+      await fetchBrands();
+    } catch (err: unknown) {
+      toast(apiErrorMessage(err, 'Kích hoạt lại thương hiệu thất bại.'), { tone: 'error' });
     }
   };
 
@@ -128,7 +138,11 @@ export const AdminBrandPage: React.FC = () => {
                     <td>
                       <div className="row" style={{ justifyContent: 'flex-end', gap: 8 }}>
                         <button type="button" className="btn sm" onClick={() => openModal(b)}><Icon name="edit" /> Sửa</button>
-                        <button type="button" className="btn sm danger" onClick={() => setDeleting(b)}><Icon name="trash" /> Xóa</button>
+                        {b.active ? (
+                          <button type="button" className="btn sm danger" onClick={() => setDeleting(b)}><Icon name="trash" /> Xóa</button>
+                        ) : (
+                          <button type="button" className="btn sm soft" onClick={() => void handleReactivate(b)}><Icon name="refresh" /> Kích hoạt lại</button>
+                        )}
                       </div>
                     </td>
                   </tr>

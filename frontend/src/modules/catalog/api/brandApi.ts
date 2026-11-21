@@ -47,4 +47,11 @@ export const brandApi = {
         const response = await apiClient.delete<string>(`/api/v1/admin/brands/${id}`);
         return response.data;
     },
+
+    updateBrandStatus: async (id: number, active: boolean): Promise<string> => {
+        const response = await apiClient.patch<string>(`/api/v1/admin/brands/${id}/status`, null, {
+            params: { active },
+        });
+        return response.data;
+    },
 };

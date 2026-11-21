@@ -15,7 +15,7 @@
     *   Tách biệt cấu trúc mô-đun: Đặt toàn bộ hạ tầng dịch vụ Email trong package chuyên trách `org.akira.laptopstore.mail` bao gồm: DTO (`EmailRequest`), Interface hợp đồng (`EmailService`), Implementation (`EmailServiceImpl`) và Controller kiểm thử (`AdminEmailController`).
     *   Áp dụng nguyên tắc Dependency Inversion (chữ D trong SOLID): Các module nghiệp vụ (Order, Auth, Review, Catalog...) chỉ phụ thuộc vào abstraction interface `EmailService` mà không bị phụ thuộc vào thư viện cụ thể bên ngoài (`JavaMailSender`).
 *   **Lý do lựa chọn (Rationals):**
-    *   Tuân thủ nghiêm ngặt bài kiểm thử kiến trúc `ModuleArchitectureTest` (ArchUnit): Package `config` là hạ tầng dùng chung được phép phục vụ các business modules mà không gây chu kỳ phụ thuộc vòng (no cyclic dependencies).
+    *   Tuân thủ nghiêm ngặt bài kiểm thử kiến trúc `ModuleArchitectureTest` (ArchUnit): Package `org.akira.laptopstore.mail` là hạ tầng gửi mail độc lập phục vụ các business modules mà không gây chu kỳ phụ thuộc vòng (no cyclic dependencies).
     *   Cấu hình giao thức SMTP chuẩn hóa qua Google Mail (`smtp.gmail.com`, port 587, STARTTLS bắt buộc, timeout bảo vệ 5000ms).
     *   Đáp ứng trọn vẹn yêu cầu email người gửi và người nhận mặc định là: `stevenndln@gmail.com`.
 *   **Phân tích giải pháp thay thế (Trade-off Analysis):**
@@ -61,7 +61,7 @@ mvnw.cmd spring-boot:run
 
 ### 2.3. Hướng dẫn gọi API kiểm thử kết nối
 *   **Endpoint:** `POST /api/v1/admin/emails/send-test`
-*   **Header:** `Authorization: Bearer <ADMIN_OR_STAFF_TOKEN>`, `Content-Type: application/json`
+*   **Header:** `Authorization: Bearer <ADMIN_TOKEN>`, `Content-Type: application/json`
 *   **Request Body (Tùy chọn):**
     ```json
     {
@@ -108,5 +108,5 @@ mvnw.cmd spring-boot:run
 ## 4. Tóm Tắt Khối Lượng Bàn Giao
 *   Tích hợp hoàn chỉnh Spring Mail hạ tầng với cấu hình linh hoạt qua biến môi trường.
 *   Cung cấp cơ chế gửi email Text và HTML đa phương thức, tự động fallback an toàn về `stevenndln@gmail.com`.
-*   Cung cấp REST API test cho nhân viên và quản trị viên vận hành thử nghiệm.
+*   Cung cấp REST API test dành riêng cho quản trị viên (`ADMIN`) vận hành thử nghiệm kết nối SMTP.
 *   Toàn bộ mã nguồn mới đều được chú thích tường minh bằng tiếng Việt giải thích: *Tại sao thay đổi? Giữ cách cũ bị ảnh hưởng xấu gì? Xử lý cách mới được lợi gì?*

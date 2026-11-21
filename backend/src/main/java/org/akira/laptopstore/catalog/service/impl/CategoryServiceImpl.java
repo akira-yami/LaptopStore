@@ -46,7 +46,7 @@ public class CategoryServiceImpl implements CategoryService {
 
     @Override
     public CategoryResponse findCategoryById(Long id) {
-        Category category = categoryRepository.findByIdNative(id)
+        Category category = categoryRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy danh mục với ID: " + id));
         return categoryMapper.toResponse(category);
     }

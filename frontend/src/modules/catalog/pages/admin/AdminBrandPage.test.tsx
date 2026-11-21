@@ -12,6 +12,7 @@ vi.mock('../../api/brandApi', () => ({
     createBrand: vi.fn(),
     updateBrand: vi.fn(),
     deleteBrand: vi.fn(),
+    updateBrandStatus: vi.fn(),
   },
 }));
 
@@ -45,7 +46,33 @@ describe('AdminBrandPage', () => {
 
     expect(screen.getByRole('button', { name: /Thêm thương hiệu/i })).toBeInTheDocument();
     expect(screen.getAllByRole('button', { name: /Sửa/i })).toHaveLength(2);
-    expect(screen.getAllByRole('button', { name: /Xóa/i })).toHaveLength(2);
+    expect(screen.getAllByRole('button', { name: /Xóa/i })).toHaveLength(1);
+    expect(screen.getByRole('button', { name: /Kích hoạt lại/i })).toBeInTheDocument();
+  });
+
+  it('kích hoạt lại thương hiệu đang tạm ẩn qua updateBrandStatus', async () => {
+    vi.mocked(brandApi.getAllBrands).mockResolvedValue([
+      { id: 2, name: 'ASUS', description: 'ROG & ZenBook', active: false },
+    ]);
+    vi.mocked(brandApi.updateBrandStatus).mockResolvedValue('Kích hoạt thương hiệu thành công!');
+
+    render(
+      <ToastProvider>
+        <MemoryRouter>
+          <AdminBrandPage />
+        </MemoryRouter>
+      </ToastProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('ASUS')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /Kích hoạt lại/i }));
+
+    await waitFor(() => {
+      expect(brandApi.updateBrandStatus).toHaveBeenCalledWith(2, true);
+    });
   });
 
   it('mở modal thêm mới, nhập dữ liệu và submit tạo thương hiệu thành công', async () => {

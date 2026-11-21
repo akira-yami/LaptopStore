@@ -54,7 +54,7 @@ public class ProductVariantServiceImpl implements ProductVariantService {
             );
         }
 
-        boolean isActive = request.getStatus() == null || !"INACTIVE".equalsIgnoreCase(request.getStatus());
+        boolean isActive = resolveActiveStatus(request.getStatus());
         String status = isActive ? "ACTIVE" : "INACTIVE";
 
         // 3. Khởi tạo Variant mới
@@ -108,7 +108,7 @@ public class ProductVariantServiceImpl implements ProductVariantService {
         variant.setSku(request.getSku());
         variant.setPrice(request.getPrice());
         if (request.getStatus() != null) {
-            boolean isActive = !"INACTIVE".equalsIgnoreCase(request.getStatus());
+            boolean isActive = resolveActiveStatus(request.getStatus());
             variant.setStatus(isActive ? "ACTIVE" : "INACTIVE");
             variant.setActive(isActive);
         }
@@ -182,6 +182,24 @@ public class ProductVariantServiceImpl implements ProductVariantService {
 
         // 3. Map sang DTO và trả về
         return productMapper.toVariantSnapshot(variant);
+    }
+
+    private boolean resolveActiveStatus(String rawStatus) {
+        if (rawStatus == null) {
+            return true;
+        }
+        String normalized = rawStatus.trim();
+        if ("ACTIVE".equalsIgnoreCase(normalized)) {
+            return true;
+        }
+        if ("INACTIVE".equalsIgnoreCase(normalized)) {
+            return false;
+        }
+        throw new BusinessException(
+                HttpStatus.BAD_REQUEST,
+                "INVALID_VARIANT_STATUS",
+                "Trạng thái biến thể không hợp lệ: '" + rawStatus + "'. Chỉ chấp nhận ACTIVE hoặc INACTIVE."
+        );
     }
 
 }

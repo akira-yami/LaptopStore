@@ -10,6 +10,7 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
@@ -70,14 +71,27 @@ public class GlobalExceptionHandler {
             MethodArgumentNotValidException exception,
             HttpServletRequest request
     ) {
+        List<Object> fieldErrors = exception.getBindingResult().getFieldErrors().stream()
+                .map(fe -> (Object) Map.of(
+                        "field", fe.getField(),
+                        "message", fe.getDefaultMessage() != null ? fe.getDefaultMessage() : "Giá trị không hợp lệ"
+                ))
+                .toList();
+
+        String primaryMessage = exception.getBindingResult().getFieldErrors().stream()
+                .map(fe -> fe.getDefaultMessage())
+                .filter(msg -> msg != null && !msg.isBlank())
+                .findFirst()
+                .orElse("Dữ liệu đầu vào không hợp lệ");
+
         ErrorResponse response = new ErrorResponse(
                 Instant.now(),
                 HttpStatus.BAD_REQUEST.value(),
                 "VALIDATION_ERROR",
-                "Dữ liệu đầu vào không hợp lệ",
+                primaryMessage,
                 request.getRequestURI(),
                 null,
-                List.of()
+                fieldErrors
         );
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
     }

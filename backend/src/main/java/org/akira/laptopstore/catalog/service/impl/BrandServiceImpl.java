@@ -45,7 +45,7 @@ public class BrandServiceImpl implements BrandService {
 
     @Override
     public BrandResponse findBrandById(Long id) {
-        Brand brand = brandRepository.findByIdNative(id)
+        Brand brand = brandRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy thương hiệu với ID: " + id));
         
         return brandMapper.toResponse(brand);

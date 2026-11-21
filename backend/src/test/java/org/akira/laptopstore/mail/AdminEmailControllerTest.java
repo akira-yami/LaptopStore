@@ -32,9 +32,11 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import org.akira.laptopstore.exception.GlobalExceptionHandler;
+
 @WebMvcTest(AdminEmailController.class)
 @Import({SecurityConfig.class, JwtAuthenticationFilter.class,
-        JwtAuthenticationEntryPoint.class, CustomAccessDeniedHandler.class})
+        JwtAuthenticationEntryPoint.class, CustomAccessDeniedHandler.class, GlobalExceptionHandler.class})
 class AdminEmailControllerTest {
 
     @Autowired
@@ -164,7 +166,10 @@ class AdminEmailControllerTest {
                         .with(user(adminPrincipal))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(invalidPayload))
-                .andExpect(status().isBadRequest());
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"))
+                .andExpect(jsonPath("$.message").value("Địa chỉ email người nhận không hợp lệ"))
+                .andExpect(jsonPath("$.fieldErrors[0].field").value("to"));
 
         verifyNoInteractions(emailService);
     }

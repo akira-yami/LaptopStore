@@ -393,7 +393,9 @@ export async function setupMockBackend(page: Page, state: MockBackendState = cre
 
     // Catalog & Inventory
     if (path === '/brands' && method === 'GET') return json(route, [{ id: 1, name: 'Apple', active: true }]);
+    if (path === '/admin/brands' && method === 'GET') return json(route, [{ id: 1, name: 'Apple', active: true }]);
     if (path === '/categories' && method === 'GET') return json(route, [{ id: 1, name: 'Ultrabook', active: true }]);
+    if (path === '/admin/categories' && method === 'GET') return json(route, [{ id: 1, name: 'Ultrabook', active: true }]);
     if (path === '/products/search' && method === 'GET') {
       return json(route, {
         content: [
