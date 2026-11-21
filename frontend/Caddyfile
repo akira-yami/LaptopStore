@@ -1,0 +1,19 @@
+:8080 {
+    encode zstd gzip
+
+    @health path /healthz
+    handle @health {
+        respond "ok" 200
+    }
+
+    @backend path /api/* /uploads/*
+    handle @backend {
+        reverse_proxy {$BACKEND_UPSTREAM}
+    }
+
+    handle {
+        root * /srv
+        try_files {path} /index.html
+        file_server
+    }
+}
