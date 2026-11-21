@@ -25,6 +25,7 @@ import org.akira.laptopstore.user.entity.User;
 import org.akira.laptopstore.user.repository.RoleRepository;
 import org.akira.laptopstore.user.repository.UserRepository;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
@@ -35,6 +36,12 @@ import java.util.Set;
 @RequiredArgsConstructor
 @Slf4j
 public class DatabaseSeeder implements CommandLineRunner {
+
+    @Value("${APP_SEED_DEMO_DATA:true}")
+    private boolean seedDemoData;
+
+    @Value("${ADMIN_BOOTSTRAP_PASSWORD:}")
+    private String adminBootstrapPassword;
 
     private final UserRepository userRepository;
     private final RoleRepository roleRepository; // Bổ sung kho lưu trữ Role
@@ -48,6 +55,23 @@ public class DatabaseSeeder implements CommandLineRunner {
     @Override
     public void run(String... args) throws Exception {
         String adminEmail = "kietadmin@gmail.com";
+        if (!seedDemoData) {
+            // Rotate an insecure demo credential if a prior startup seeded it.
+            userRepository.findByEmailIgnoreCase(adminEmail).ifPresent(existing -> {
+                if (passwordEncoder.matches("password123", existing.getPasswordHash())) {
+                    if (adminBootstrapPassword == null || adminBootstrapPassword.isBlank()) {
+                        throw new IllegalStateException(
+                                "ADMIN_BOOTSTRAP_PASSWORD is required to rotate insecure demo admin");
+                    }
+                    existing.setPasswordHash(passwordEncoder.encode(adminBootstrapPassword));
+                    existing.setTokenVersion(existing.getTokenVersion() + 1);
+                    userRepository.save(existing);
+                    log.warn("Rotated unsafe demo admin credential for production");
+                }
+            });
+            return;
+        }
+
 
         if (userRepository.findByEmailIgnoreCase(adminEmail).isEmpty()) {
             // 1. Tìm Role ADMIN trong DB, nếu chưa có thì tự động tạo mới
