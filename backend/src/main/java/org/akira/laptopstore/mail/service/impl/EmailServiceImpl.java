@@ -1,35 +1,24 @@
-package org.akira.laptopstore.config.mail.service;
-
-/*
- * =========================================================================
- * [TRIỂN KHAI DỊCH VỤ EMAIL THỰC TẾ - EmailServiceImpl]:
- * - Tại sao triển khai service này:
- *   + Hiện thực hóa interface `EmailService` bằng việc tích hợp `JavaMailSender` của Spring Boot Starter Mail.
- *   + Tự động quản lý địa chỉ gửi mặc định và địa chỉ nhận dự phòng (`stevenndln@gmail.com`).
- * - Giữ theo cách cũ (ném exception trực tiếp ra ngoài controller/service gọi):
- *   + Khi mạng lag, sai mật khẩu ứng dụng Gmail hoặc SMTP server bị ngắt kết nối,
- *     toàn bộ giao dịch nghiệp vụ (như tạo đơn hàng thành công, đổi trạng thái variant)
- *     sẽ bị rollback hoặc người dùng nhận mã lỗi 500 sập trang.
- * - Xử lý theo cách mới được lợi gì:
- *   + Sử dụng cơ chế Try-Catch bọc toàn diện, ghi log lỗi chuẩn xác và trả cờ boolean an toàn.
- *   + Hỗ trợ cấu hình UTF-8 toàn diện cho cả tiêu đề lẫn nội dung HTML, tránh vỡ font chữ tiếng Việt.
- *   + Tự động fallback về email mặc định `stevenndln@gmail.com` khi người nhận rỗng.
- * =========================================================================
- */
+package org.akira.laptopstore.mail.service.impl;
 
 import jakarta.mail.MessagingException;
 import jakarta.mail.internet.MimeMessage;
 import lombok.extern.slf4j.Slf4j;
-import org.akira.laptopstore.config.mail.dto.EmailRequest;
+import org.akira.laptopstore.mail.dto.EmailRequest;
+import org.akira.laptopstore.mail.service.EmailService;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.mail.MailException;
 import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 
 import java.nio.charset.StandardCharsets;
 
+/**
+ * Triển khai dịch vụ gửi email qua Spring JavaMailSender.
+ * Chỉ bắt các ngoại lệ hạ tầng gửi thư (MailException, MessagingException) và không nuốt RuntimeException lập trình.
+ */
 @Slf4j
 @Service
 public class EmailServiceImpl implements EmailService {
@@ -50,13 +39,13 @@ public class EmailServiceImpl implements EmailService {
     @Override
     public boolean sendEmail(EmailRequest request) {
         if (request == null) {
-            log.warn("[EMAIL] EmailRequest bị null, hủy bỏ tác vụ gửi mail.");
-            return false;
+            throw new IllegalArgumentException("Yêu cầu gửi email không được để trống (null)");
+        }
+        if (!StringUtils.hasText(request.getSubject()) || !StringUtils.hasText(request.getContent())) {
+            throw new IllegalArgumentException("Tiêu đề và nội dung email không được để trống");
         }
 
-        String recipient = (request.getTo() != null && !request.getTo().trim().isEmpty())
-                ? request.getTo().trim()
-                : defaultTo;
+        String recipient = StringUtils.hasText(request.getTo()) ? request.getTo().trim() : defaultTo;
 
         try {
             if (request.isHtml()) {
@@ -64,13 +53,10 @@ public class EmailServiceImpl implements EmailService {
             } else {
                 sendSimpleMessage(recipient, request.getSubject(), request.getContent());
             }
-            log.info("[EMAIL] Gửi email thành công tới: {} | Tiêu đề: {}", recipient, request.getSubject());
+            log.info("[EMAIL] Đã gửi email thành công tới: {} | Tiêu đề: {}", recipient, request.getSubject());
             return true;
         } catch (MailException | MessagingException ex) {
-            log.error("[EMAIL] Lỗi khi gửi email tới {} với tiêu đề {}: {}", recipient, request.getSubject(), ex.getMessage(), ex);
-            return false;
-        } catch (Exception ex) {
-            log.error("[EMAIL] Ngoại lệ không xác định khi gửi mail: {}", ex.getMessage(), ex);
+            log.error("[EMAIL] Lỗi kết nối máy chủ SMTP khi gửi tới {}: {}", recipient, ex.getMessage(), ex);
             return false;
         }
     }
@@ -114,7 +100,7 @@ public class EmailServiceImpl implements EmailService {
         helper.setFrom(defaultFrom);
         helper.setTo(recipient);
         helper.setSubject(subject);
-        helper.setText(htmlContent, true); // true = nội dung dạng HTML
+        helper.setText(htmlContent, true);
 
         mailSender.send(mimeMessage);
     }

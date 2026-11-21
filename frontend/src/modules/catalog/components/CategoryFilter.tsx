@@ -16,10 +16,10 @@ const CategoryFilter: React.FC<CategoryFilterProps> = ({ selectedCategoryId, sel
     useEffect(() => {
         const fetchFilters = async () => {
             try {
-                // Gọi song song 2 API để tiết kiệm thời gian chờ
+                // Gọi song song 2 API public để khách hàng không bị 401/403
                 const [cats, brds] = await Promise.all([
                     categoryApi.getAllCategories(),
-                    brandApi.getAllBrands()
+                    brandApi.getPublicBrands()
                 ]);
                 // Chỉ hiển thị những mục đang ACTIVE
                 setCategories(cats.filter(c => c.active));

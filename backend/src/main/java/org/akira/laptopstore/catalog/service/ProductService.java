@@ -2,6 +2,7 @@ package org.akira.laptopstore.catalog.service;
 
 import org.akira.laptopstore.catalog.dto.request.CreateProductRequest;
 import org.akira.laptopstore.catalog.dto.request.CreateVariantRequest;
+import org.akira.laptopstore.catalog.dto.request.UpdateProductImageRequest;
 import org.akira.laptopstore.catalog.dto.request.UpdateProductRequest;
 
 import org.akira.laptopstore.catalog.entity.Product;
@@ -43,7 +44,7 @@ public interface ProductService {
      *   Cho phép lưu trữ, sắp xếp, bổ sung nhiều ảnh chi tiết và tự động thiết lập ảnh đại diện isPrimary.
      * =========================================================================
      */
-    List<ProductImageDto> updateProductImages(Long productId, List<ProductImageDto> images);
+    List<ProductImageDto> updateProductImages(Long productId, List<UpdateProductImageRequest> images);
 
     ProductSpecificationDto getProductSpecification(Long productId);
 

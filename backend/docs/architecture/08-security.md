@@ -10,7 +10,8 @@ Thiết kế này chưa được cài đặt trong source. Security/JWT/validati
 | Sửa profile/địa chỉ mình | Không | Có | Có | Có |
 | Giỏ, mua và đánh giá | Không | Có | Chỉ nếu có thêm USER | Chỉ nếu có thêm USER |
 | Xử lý đơn/nhập hàng/thu COD | Không | Không | Có | Có |
-| CRUD catalog/coupon/supplier | Không | Không | Không trong MVP | Có |
+| CRUD catalog (products, variants, images, brands, categories) | Không | Không | Có (theo [ADR-005](../adr/ADR-005-staff-catalog-management.md)) | Có |
+| CRUD coupon / supplier / email test hệ thống | Không | Không | Không | Có |
 | Điều chỉnh kho thủ công | Không | Không | Không trong MVP | Có |
 | Đổi role/khóa tài khoản | Không | Không | Không | Có |
 

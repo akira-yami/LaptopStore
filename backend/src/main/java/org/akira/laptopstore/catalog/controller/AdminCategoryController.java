@@ -36,10 +36,16 @@ import java.util.List;
 public class AdminCategoryController {
     private final CategoryService categoryService;
 
-    // Lấy toàn bộ danh mục cho phân hệ quản trị
+    // Lấy toàn bộ danh mục cho phân hệ quản trị (bao gồm cả tạm ẩn)
     @GetMapping
     public ResponseEntity<List<CategoryResponse>> getAllCategories() {
-        return ResponseEntity.ok(categoryService.findAllCategories());
+        return ResponseEntity.ok(categoryService.findAllCategoriesForAdmin());
+    }
+
+    @PatchMapping("/{id}/status")
+    public ResponseEntity<String> updateCategoryStatus(@PathVariable Long id, @RequestParam boolean active) {
+        categoryService.updateCategoryStatus(id, active);
+        return ResponseEntity.ok(active ? "Kích hoạt danh mục thành công!" : "Tạm ẩn danh mục thành công!");
     }
 
 

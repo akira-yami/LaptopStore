@@ -39,10 +39,16 @@ public class AdminBrandController {
 
     private final BrandService brandService;
 
-    // Lấy toàn bộ thương hiệu cho giao diện quản trị của Staff/Admin
+    // Lấy toàn bộ thương hiệu cho giao diện quản trị của Staff/Admin (bao gồm cả tạm ẩn)
     @GetMapping
     public ResponseEntity<List<BrandResponse>> getAllBrands() {
-        return ResponseEntity.ok(brandService.findAllBrands());
+        return ResponseEntity.ok(brandService.findAllBrandsForAdmin());
+    }
+
+    @PatchMapping("/{id}/status")
+    public ResponseEntity<String> updateBrandStatus(@PathVariable Long id, @RequestParam boolean active) {
+        brandService.updateBrandStatus(id, active);
+        return ResponseEntity.ok(active ? "Kích hoạt thương hiệu thành công!" : "Tạm ẩn thương hiệu thành công!");
     }
 
 

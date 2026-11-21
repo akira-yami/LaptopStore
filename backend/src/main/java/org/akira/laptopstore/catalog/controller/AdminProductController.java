@@ -14,12 +14,14 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.security.access.prepost.PreAuthorize;
 
+import org.akira.laptopstore.catalog.dto.request.UpdateProductImageRequest;
 import org.akira.laptopstore.catalog.dto.request.UpdateProductRequest;
 import org.akira.laptopstore.catalog.dto.request.UpdateVariantRequest;
 import org.akira.laptopstore.catalog.dto.response.ProductImageDto;
 import org.akira.laptopstore.catalog.dto.response.ProductResponse;
 import org.akira.laptopstore.catalog.dto.response.VariantSnapshot;
 import org.akira.laptopstore.catalog.mapper.ProductMapper;
+import org.springframework.validation.annotation.Validated;
 
 import java.util.List;
 
@@ -38,6 +40,7 @@ import java.util.List;
  *    - Quản lý tập trung sản phẩm, biến thể (variant) và bộ ảnh đa góc nhìn (gallery) qua RESTful API chuẩn.
  * =========================================================================
  */
+@Validated
 @RestController
 @RequestMapping("/api/v1/admin/products")
 @RequiredArgsConstructor
@@ -159,7 +162,7 @@ public class AdminProductController {
     @PutMapping("/{productId}/images")
     public ResponseEntity<List<ProductImageDto>> updateProductImages(
             @PathVariable Long productId,
-            @RequestBody List<ProductImageDto> images) {
+            @Valid @RequestBody List<@Valid UpdateProductImageRequest> images) {
 
         List<ProductImageDto> response = productService.updateProductImages(productId, images);
         return ResponseEntity.ok(response);

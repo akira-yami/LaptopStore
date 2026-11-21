@@ -1,106 +1,182 @@
 package org.akira.laptopstore.catalog.controller;
 
-/*
- * =========================================================================
- * [TẬP TEST TỰ ĐỘNG - BƯỚC RED TRONG CHU KỲ TDD - AdminBrandControllerTest]:
- * - Tại sao tạo file này:
- *   + Tuân thủ nguyên tắc "Tests BEFORE Code": viết test mô tả các hành vi quản trị
- *     thương hiệu (lấy danh sách, tạo mới, cập nhật, xóa mềm) trước khi sửa logic.
- * - Giữ theo cách cũ thì ảnh hưởng xấu gì:
- *   + Không có unit test bao phủ controller AdminBrandController khiến việc phân quyền
- *     hoặc refactor dễ gây lỗi 403 Forbidden hoặc 500 ngầm mà không phát hiện được.
- * - Xử lý theo cách mới được lợi gì:
- *   + Đạt 100% tỷ lệ pass, bảo đảm hợp đồng RESTful API giữa Frontend và Backend luôn ổn định.
- * =========================================================================
- */
-
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.akira.laptopstore.catalog.dto.request.CreateBrandRequest;
-
 import org.akira.laptopstore.catalog.dto.request.UpdateBrandRequest;
 import org.akira.laptopstore.catalog.dto.response.BrandResponse;
 import org.akira.laptopstore.catalog.service.BrandService;
+import org.akira.laptopstore.security.CustomAccessDeniedHandler;
+import org.akira.laptopstore.security.JwtAuthenticationEntryPoint;
+import org.akira.laptopstore.security.SecurityConfig;
+import org.akira.laptopstore.security.filter.JwtAuthenticationFilter;
+import org.akira.laptopstore.security.jwt.JwtTokenProvider;
+import org.akira.laptopstore.security.principal.CustomUserDetails;
+import org.akira.laptopstore.security.principal.CustomUserDetailsService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
-import org.mockito.Mock;
-import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
+import org.springframework.context.annotation.Import;
+import org.springframework.http.MediaType;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.web.servlet.MockMvc;
 
 import java.util.List;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-@ExtendWith(MockitoExtension.class)
+import org.akira.laptopstore.exception.GlobalExceptionHandler;
+
+@WebMvcTest(AdminBrandController.class)
+@Import({SecurityConfig.class, JwtAuthenticationFilter.class,
+        JwtAuthenticationEntryPoint.class, CustomAccessDeniedHandler.class, GlobalExceptionHandler.class})
 class AdminBrandControllerTest {
 
-    @Mock
+    @Autowired
+    private MockMvc mockMvc;
+
+    private final ObjectMapper objectMapper = new ObjectMapper();
+
+    @MockitoBean
     private BrandService brandService;
 
-    @InjectMocks
-    private AdminBrandController adminBrandController;
+    @MockitoBean
+    private JwtTokenProvider jwtTokenProvider;
+
+    @MockitoBean
+    private CustomUserDetailsService userDetailsService;
+
+    private CustomUserDetails createPrincipal(Long id, String role) {
+        return new CustomUserDetails(
+                id,
+                "user@example.com",
+                "secret",
+                0,
+                "ACTIVE",
+                List.of(new SimpleGrantedAuthority(role))
+        );
+    }
 
     @Test
-    @DisplayName("Staff hoặc Admin lấy danh sách toàn bộ thương hiệu quản lý")
-    void getAllBrands_ShouldReturnList() {
+    @DisplayName("GET /api/v1/admin/brands - Chưa đăng nhập trả về 401 Unauthorized")
+    void getAllBrands_unauthenticated_returns401() throws Exception {
+        mockMvc.perform(get("/api/v1/admin/brands"))
+                .andExpect(status().isUnauthorized());
+
+        verifyNoInteractions(brandService);
+    }
+
+    @Test
+    @DisplayName("GET /api/v1/admin/brands - Tài khoản ROLE_USER bị chặn 403 Forbidden")
+    void getAllBrands_asUser_returns403() throws Exception {
+        CustomUserDetails userPrincipal = createPrincipal(10L, "ROLE_USER");
+
+        mockMvc.perform(get("/api/v1/admin/brands").with(user(userPrincipal)))
+                .andExpect(status().isForbidden());
+
+        verifyNoInteractions(brandService);
+    }
+
+    @Test
+    @DisplayName("GET /api/v1/admin/brands - STAFF lấy danh sách thương hiệu (kể cả tạm ẩn) trả 200 OK")
+    void getAllBrands_asStaff_returns200() throws Exception {
+        CustomUserDetails staffPrincipal = createPrincipal(20L, "ROLE_STAFF");
         BrandResponse b1 = BrandResponse.builder().id(1L).name("ASUS").active(true).build();
-        BrandResponse b2 = BrandResponse.builder().id(2L).name("DELL").active(true).build();
-        when(brandService.findAllBrands()).thenReturn(List.of(b1, b2));
+        BrandResponse b2 = BrandResponse.builder().id(2L).name("DELL").active(false).build();
 
-        ResponseEntity<List<BrandResponse>> response = adminBrandController.getAllBrands();
+        when(brandService.findAllBrandsForAdmin()).thenReturn(List.of(b1, b2));
 
-        assertEquals(HttpStatus.OK, response.getStatusCode());
-        assertNotNull(response.getBody());
-        assertEquals(2, response.getBody().size());
-        verify(brandService).findAllBrands();
+        mockMvc.perform(get("/api/v1/admin/brands").with(user(staffPrincipal)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(2))
+                .andExpect(jsonPath("$[0].name").value("ASUS"))
+                .andExpect(jsonPath("$[1].active").value(false));
+
+        verify(brandService).findAllBrandsForAdmin();
     }
 
     @Test
-    @DisplayName("Admin hoặc Staff tạo thương hiệu mới thành công (201 Created)")
-    void createBrand_ShouldReturn201() {
-        CreateBrandRequest request = new CreateBrandRequest("Apple", "Thương hiệu MacBook");
-        BrandResponse mockResponse = BrandResponse.builder().id(3L).name("Apple").description("Thương hiệu MacBook").active(true).build();
+    @DisplayName("POST /api/v1/admin/brands - ADMIN tạo thương hiệu thành công trả 201 Created")
+    void createBrand_asAdmin_validPayload_returns201() throws Exception {
+        CustomUserDetails adminPrincipal = createPrincipal(1L, "ROLE_ADMIN");
+        CreateBrandRequest request = new CreateBrandRequest("Apple", "MacBook Pro");
+        BrandResponse response = BrandResponse.builder().id(3L).name("Apple").active(true).build();
 
-        when(brandService.createBrand(any(CreateBrandRequest.class))).thenReturn(mockResponse);
+        when(brandService.createBrand(any(CreateBrandRequest.class))).thenReturn(response);
 
-        ResponseEntity<BrandResponse> response = adminBrandController.createBrand(request);
+        mockMvc.perform(post("/api/v1/admin/brands")
+                        .with(user(adminPrincipal))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.id").value(3))
+                .andExpect(jsonPath("$.name").value("Apple"));
 
-        assertEquals(HttpStatus.CREATED, response.getStatusCode());
-        assertNotNull(response.getBody());
-        assertEquals("Apple", response.getBody().getName());
-        verify(brandService).createBrand(request);
+        verify(brandService).createBrand(any(CreateBrandRequest.class));
     }
 
     @Test
-    @DisplayName("Admin hoặc Staff cập nhật thương hiệu thành công (200 OK)")
-    void updateBrand_ShouldReturn200() {
-        UpdateBrandRequest request = new UpdateBrandRequest("Apple M-Series", "MacBook Pro & Air");
-        BrandResponse mockResponse = BrandResponse.builder().id(3L).name("Apple M-Series").description("MacBook Pro & Air").active(true).build();
+    @DisplayName("POST /api/v1/admin/brands - Tạo thương hiệu với tên rỗng trả 400 Bad Request")
+    void createBrand_invalidPayload_returns400() throws Exception {
+        CustomUserDetails adminPrincipal = createPrincipal(1L, "ROLE_ADMIN");
+        CreateBrandRequest request = new CreateBrandRequest("", "Mô tả");
 
-        when(brandService.updateBrand(eq(3L), any(UpdateBrandRequest.class))).thenReturn(mockResponse);
+        mockMvc.perform(post("/api/v1/admin/brands")
+                        .with(user(adminPrincipal))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isBadRequest());
 
-        ResponseEntity<BrandResponse> response = adminBrandController.updateBrand(3L, request);
-
-        assertEquals(HttpStatus.OK, response.getStatusCode());
-        assertNotNull(response.getBody());
-        assertEquals("Apple M-Series", response.getBody().getName());
-        verify(brandService).updateBrand(3L, request);
+        verifyNoInteractions(brandService);
     }
 
     @Test
-    @DisplayName("Admin hoặc Staff xóa thương hiệu thành công (200 OK)")
-    void deleteBrand_ShouldReturn200() {
+    @DisplayName("PUT /api/v1/admin/brands/{id} - Cập nhật thương hiệu thành công trả 200 OK")
+    void updateBrand_validPayload_returns200() throws Exception {
+        CustomUserDetails staffPrincipal = createPrincipal(20L, "ROLE_STAFF");
+        UpdateBrandRequest request = new UpdateBrandRequest("Apple Silicon", "Cập nhật");
+        BrandResponse response = BrandResponse.builder().id(3L).name("Apple Silicon").active(true).build();
+
+        when(brandService.updateBrand(eq(3L), any(UpdateBrandRequest.class))).thenReturn(response);
+
+        mockMvc.perform(put("/api/v1/admin/brands/3")
+                        .with(user(staffPrincipal))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.name").value("Apple Silicon"));
+
+        verify(brandService).updateBrand(eq(3L), any(UpdateBrandRequest.class));
+    }
+
+    @Test
+    @DisplayName("DELETE /api/v1/admin/brands/{id} - Xóa mềm thương hiệu trả 200 OK")
+    void deleteBrand_asAdmin_returns200() throws Exception {
+        CustomUserDetails adminPrincipal = createPrincipal(1L, "ROLE_ADMIN");
         doNothing().when(brandService).deleteBrand(3L);
 
-        ResponseEntity<String> response = adminBrandController.deleteBrand(3L);
+        mockMvc.perform(delete("/api/v1/admin/brands/3").with(user(adminPrincipal)))
+                .andExpect(status().isOk());
 
-        assertEquals(HttpStatus.OK, response.getStatusCode());
-        assertEquals("Xóa thương hiệu thành công!", response.getBody());
         verify(brandService).deleteBrand(3L);
+    }
+
+    @Test
+    @DisplayName("PATCH /api/v1/admin/brands/{id}/status - Đổi trạng thái hiển thị trả 200 OK")
+    void updateBrandStatus_returns200() throws Exception {
+        CustomUserDetails staffPrincipal = createPrincipal(20L, "ROLE_STAFF");
+        doNothing().when(brandService).updateBrandStatus(3L, true);
+
+        mockMvc.perform(patch("/api/v1/admin/brands/3/status?active=true").with(user(staffPrincipal)))
+                .andExpect(status().isOk());
+
+        verify(brandService).updateBrandStatus(3L, true);
     }
 }

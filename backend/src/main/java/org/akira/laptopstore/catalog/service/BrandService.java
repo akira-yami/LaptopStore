@@ -8,12 +8,16 @@ import java.util.List;
 
 public interface BrandService {
     
-    // 2 hàm cũ của em đã được nâng cấp lên dùng DTO
+    // Hàm dành cho khách hàng: chỉ lấy thương hiệu đang hoạt động (active = true)
     List<BrandResponse> findAllBrands();
+
+    // Hàm dành cho Admin/Staff: lấy toàn bộ thương hiệu (kể cả active = false / tạm ẩn)
+    List<BrandResponse> findAllBrandsForAdmin();
+
     BrandResponse findBrandById(Long id);
 
-    // 3 hàm mới cho chuẩn nghiệp vụ Create/Update/Delete
     BrandResponse createBrand(CreateBrandRequest request);
     BrandResponse updateBrand(Long id, UpdateBrandRequest request);
     void deleteBrand(Long id);
+    void updateBrandStatus(Long id, boolean active);
 }

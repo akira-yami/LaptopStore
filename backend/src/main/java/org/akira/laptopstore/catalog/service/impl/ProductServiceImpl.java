@@ -33,6 +33,10 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.akira.laptopstore.catalog.dto.response.ProductImageDto;
+import org.akira.laptopstore.catalog.dto.request.UpdateProductImageRequest;
+import org.akira.laptopstore.catalog.entity.ProductImage;
+import java.util.ArrayList;
+import java.util.Collections;
 import org.akira.laptopstore.catalog.dto.response.ProductResponse;
 import org.akira.laptopstore.catalog.dto.response.ProductSpecificationDto;
 import org.akira.laptopstore.catalog.dto.response.ProductSummaryResponse;
@@ -236,43 +240,55 @@ public class ProductServiceImpl implements ProductService {
      */
     @Override
     @Transactional
-    public List<ProductImageDto> updateProductImages(Long productId, List<ProductImageDto> imageDtos) {
+    public List<ProductImageDto> updateProductImages(Long productId, List<UpdateProductImageRequest> imageDtos) {
         Product product = productRepository.findById(productId)
                 .orElseThrow(() -> new ResourceNotFoundException("Không tìm thấy sản phẩm với ID: " + productId));
 
-        // 1. Xóa toàn bộ ảnh cũ của sản phẩm
-        List<org.akira.laptopstore.catalog.entity.ProductImage> oldImages = productImageRepository.findByProductId(productId);
+        if (imageDtos == null) {
+            imageDtos = Collections.emptyList();
+        }
+
+        // Validate và kiểm tra từng phần tử ảnh
+        int primaryIndex = -1;
+        for (int i = 0; i < imageDtos.size(); i++) {
+            UpdateProductImageRequest dto = imageDtos.get(i);
+            if (dto == null || !StringUtils.hasText(dto.getImageUrl())) {
+                throw new BusinessException(HttpStatus.BAD_REQUEST, "INVALID_IMAGE_URL", "Đường dẫn ảnh không được để trống");
+            }
+            String trimmedUrl = dto.getImageUrl().trim();
+            if (!trimmedUrl.startsWith("/uploads/") && !trimmedUrl.startsWith("http://") && !trimmedUrl.startsWith("https://")) {
+                throw new BusinessException(HttpStatus.BAD_REQUEST, "INVALID_IMAGE_URL", "Đường dẫn ảnh phải bắt đầu bằng /uploads/, http:// hoặc https://");
+            }
+            if (primaryIndex == -1 && Boolean.TRUE.equals(dto.getIsPrimary())) {
+                primaryIndex = i;
+            }
+        }
+
+        // Nếu danh sách không rỗng và chưa có ảnh nào là primary -> tự chọn ảnh đầu tiên
+        if (primaryIndex == -1 && !imageDtos.isEmpty()) {
+            primaryIndex = 0;
+        }
+
+        // Chuẩn hóa danh sách ProductImage mới trong bộ nhớ
+        List<ProductImage> newImages = new ArrayList<>();
+        for (int i = 0; i < imageDtos.size(); i++) {
+            UpdateProductImageRequest dto = imageDtos.get(i);
+            newImages.add(ProductImage.builder()
+                    .product(product)
+                    .imageUrl(dto.getImageUrl().trim())
+                    .isPrimary(i == primaryIndex)
+                    .build());
+        }
+
+        // 1. Xóa toàn bộ ảnh cũ bằng batch xóa nhanh
+        List<ProductImage> oldImages = productImageRepository.findByProductId(productId);
         if (!oldImages.isEmpty()) {
-            productImageRepository.deleteAll(oldImages);
+            productImageRepository.deleteAllInBatch(oldImages);
         }
 
-        // 2. Thêm danh sách ảnh mới nếu có
-        if (imageDtos != null && !imageDtos.isEmpty()) {
-            boolean hasPrimary = false;
-            for (ProductImageDto dto : imageDtos) {
-                boolean isPrimary = Boolean.TRUE.equals(dto.getIsPrimary()) && !hasPrimary;
-                if (isPrimary) {
-                    hasPrimary = true;
-                }
-                org.akira.laptopstore.catalog.entity.ProductImage img = org.akira.laptopstore.catalog.entity.ProductImage.builder()
-                        .product(product)
-                        .imageUrl(dto.getImageUrl().trim())
-                        .isPrimary(isPrimary)
-                        .build();
-                productImageRepository.save(img);
-            }
-
-            // Nếu không có ảnh nào được set isPrimary=true thì mặc định ảnh đầu tiên là primary
-            if (!hasPrimary) {
-                List<org.akira.laptopstore.catalog.entity.ProductImage> savedList = productImageRepository.findByProductId(productId);
-                if (!savedList.isEmpty()) {
-                    savedList.get(0).setIsPrimary(true);
-                    productImageRepository.save(savedList.get(0));
-                }
-            }
-        }
-
-        return productMapper.toProductImageDtoList(productImageRepository.findByProductId(productId));
+        // 2. Lưu danh sách ảnh mới và trả về DTO trực tiếp (không query lặp lại)
+        List<ProductImage> saved = newImages.isEmpty() ? Collections.emptyList() : productImageRepository.saveAll(newImages);
+        return productMapper.toProductImageDtoList(saved);
     }
 
 

@@ -1,18 +1,4 @@
-/**
- * =========================================================================
- * [TEST TỰ ĐỘNG FRONTEND - BƯỚC RED TRONG CHU KỲ TDD - AdminProductPage.test.tsx]:
- * - Tại sao tạo file này:
- *   Kiểm thử giao diện AdminProductPage với 2 tính năng mới:
- *   1. Nút mở Modal quản lý cấu hình và trạng thái bán của từng Biến thể (Variants).
- *   2. Nút mở Modal quản lý bộ sưu tập nhiều ảnh sản phẩm (Multi-Images Gallery).
- * - Giữ theo cách cũ thì ảnh hưởng xấu gì:
- *   Không phát hiện được lỗi render cột bảng, nút modal hoặc lỗi đồng bộ giữa state sản phẩm và danh mục con.
- * - Xử lý theo cách mới được lợi gì:
- *   Bảo vệ tính ổn định của toàn bộ trang quản trị sản phẩm với mock axiosClient và catalogApi đầy đủ.
- * =========================================================================
- */
-import { render, screen, waitFor } from '@testing-library/react';
-
+import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import React from 'react';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -42,6 +28,21 @@ describe('AdminProductPage', () => {
     vi.clearAllMocks();
   });
 
+  const mockProduct = {
+    id: 101,
+    name: 'MacBook Air M2',
+    brandName: 'Apple',
+    categoryName: 'Ultrabook',
+    status: 'ACTIVE',
+    images: [
+      { id: 1, imageUrl: '/uploads/products/macbook-air.jpg', isPrimary: true },
+      { id: 2, imageUrl: '/uploads/products/macbook-air-side.jpg', isPrimary: false },
+    ],
+    variants: [
+      { id: 1, sku: 'MBA-M2-8-256', ram: '8GB', storage: '256GB', color: 'Midnight', price: 27000000, quantity: 5, status: 'ACTIVE', active: true },
+    ],
+  };
+
   it('hiển thị danh sách sản phẩm với các nút quản lý biến thể và bộ ảnh sản phẩm', async () => {
     vi.mocked(catalogApi.getBrands).mockResolvedValue([
       { id: 1, name: 'Apple', active: true },
@@ -52,24 +53,7 @@ describe('AdminProductPage', () => {
 
     vi.mocked(apiClient.get).mockImplementation((url: string) => {
       if (url === '/admin/products') {
-        return Promise.resolve({
-          data: [
-            {
-              id: 101,
-              name: 'MacBook Air M2',
-              brandName: 'Apple',
-              categoryName: 'Ultrabook',
-              status: 'ACTIVE',
-              images: [
-                { id: 1, imageUrl: '/uploads/products/macbook-air.jpg', isPrimary: true },
-                { id: 2, imageUrl: '/uploads/products/macbook-air-side.jpg', isPrimary: false },
-              ],
-              variants: [
-                { id: 1, sku: 'MBA-M2-8-256', ram: '8GB', storage: '256GB', color: 'Midnight', price: 27000000, quantity: 5, status: 'ACTIVE', active: true },
-              ],
-            },
-          ],
-        });
+        return Promise.resolve({ data: [mockProduct] });
       }
       return Promise.reject(new Error('not found'));
     });
@@ -94,5 +78,97 @@ describe('AdminProductPage', () => {
     expect(screen.getByRole('button', { name: /Thêm sản phẩm/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /1 biến thể/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /2 ảnh/i })).toBeInTheDocument();
+  });
+
+  it('mở modal quản lý biến thể và bấm nút ngừng bán biến thể', async () => {
+    vi.mocked(catalogApi.getBrands).mockResolvedValue([]);
+    vi.mocked(catalogApi.getCategories).mockResolvedValue([]);
+
+    vi.mocked(apiClient.get).mockImplementation((url: string) => {
+      if (url === '/admin/products') {
+        return Promise.resolve({ data: [mockProduct] });
+      }
+      if (url === '/admin/products/101/variants') {
+        return Promise.resolve({ data: mockProduct.variants });
+      }
+      return Promise.reject(new Error('not found'));
+    });
+
+    vi.mocked(apiClient.patch).mockResolvedValue({ data: 'Hủy kích hoạt thành công' });
+
+    render(
+      <ToastProvider>
+        <MemoryRouter>
+          <AdminProductPage />
+        </MemoryRouter>
+      </ToastProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('MacBook Air M2')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /1 biến thể/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/Biến thể: MacBook Air M2/i)).toBeInTheDocument();
+      expect(screen.getByText('MBA-M2-8-256')).toBeInTheDocument();
+    });
+
+    const toggleBtn = screen.getAllByRole('button', { name: /Ngừng bán/i })[1];
+    fireEvent.click(toggleBtn);
+
+    await waitFor(() => {
+      expect(apiClient.patch).toHaveBeenCalledWith('/admin/products/101/variants/1/status', null, { params: { active: false } });
+    });
+  });
+
+  it('mở modal quản lý bộ ảnh, thêm ảnh và bấm Lưu bộ ảnh thành công', async () => {
+    vi.mocked(catalogApi.getBrands).mockResolvedValue([]);
+    vi.mocked(catalogApi.getCategories).mockResolvedValue([]);
+
+    vi.mocked(apiClient.get).mockImplementation((url: string) => {
+      if (url === '/admin/products') {
+        return Promise.resolve({ data: [mockProduct] });
+      }
+      return Promise.reject(new Error('not found'));
+    });
+
+    vi.mocked(apiClient.put).mockResolvedValue({ data: mockProduct.images });
+
+    render(
+      <ToastProvider>
+        <MemoryRouter>
+          <AdminProductPage />
+        </MemoryRouter>
+      </ToastProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('MacBook Air M2')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /2 ảnh/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/Bộ sưu tập ảnh: MacBook Air M2/i)).toBeInTheDocument();
+    });
+
+    const urlInput = screen.getByPlaceholderText(/Ví dụ: \/uploads\/products/i);
+    fireEvent.change(urlInput, { target: { value: '/uploads/products/macbook-back.jpg' } });
+
+    fireEvent.click(screen.getByRole('button', { name: /Thêm ảnh/i }));
+
+    const saveBtn = screen.getByRole('button', { name: /Lưu bộ ảnh/i });
+    fireEvent.click(saveBtn);
+
+    await waitFor(() => {
+      expect(apiClient.put).toHaveBeenCalledWith(
+        '/admin/products/101/images',
+        expect.arrayContaining([
+          expect.objectContaining({ imageUrl: '/uploads/products/macbook-back.jpg', isPrimary: false }),
+        ])
+      );
+    });
   });
 });

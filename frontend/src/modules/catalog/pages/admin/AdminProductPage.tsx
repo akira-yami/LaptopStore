@@ -266,6 +266,7 @@ export const AdminProductPage: React.FC = () => {
     // ==========================================
     const openVariantModal = async (product: ProductResponse) => {
         setVariantModalProduct(product);
+        setProductVariants([]);
         setEditingVariant(null);
         setVariantLoading(true);
         try {
@@ -290,7 +291,7 @@ export const AdminProductPage: React.FC = () => {
                 storage: variant.storage,
                 color: variant.color,
                 price: String(variant.price),
-                status: variant.status,
+                status: variant.active === false || variant.status === 'INACTIVE' ? 'INACTIVE' : 'ACTIVE',
             });
         }
         setEditingVariant(variant);
@@ -373,7 +374,6 @@ export const AdminProductPage: React.FC = () => {
         }
         const isPrimary = imageList.length === 0;
         const newImg: ProductImageDto = {
-            id: Date.now(),
             imageUrl: url,
             isPrimary,
         };
@@ -385,7 +385,7 @@ export const AdminProductPage: React.FC = () => {
         setImageList((prev) => {
             const next = prev.filter((_, i) => i !== index);
             if (next.length > 0 && !next.some((img) => img.isPrimary)) {
-                next[0].isPrimary = true;
+                return [{ ...next[0], isPrimary: true }, ...next.slice(1)];
             }
             return next;
         });
@@ -404,7 +404,8 @@ export const AdminProductPage: React.FC = () => {
         if (!imageModalProduct) return;
         setSavingImages(true);
         try {
-            const saved = await adminProductApi.updateImages(imageModalProduct.id, imageList);
+            const payload = imageList.map(({ imageUrl, isPrimary }) => ({ imageUrl, isPrimary }));
+            const saved = await adminProductApi.updateImages(imageModalProduct.id, payload as ProductImageDto[]);
             toast('Đã cập nhật danh sách ảnh sản phẩm.');
             setImageList(saved);
             setImageModalProduct(null);
@@ -941,7 +942,7 @@ export const AdminProductPage: React.FC = () => {
                         ) : (
                             imageList.map((img, idx) => (
                                 <div
-                                    key={idx}
+                                    key={img.id ? `id-${img.id}` : `url-${img.imageUrl}-${idx}`}
                                     style={{
                                         border: img.isPrimary ? '2px solid var(--ls-accent, #3b82f6)' : '1px solid var(--ls-border, #e5e7eb)',
                                         borderRadius: 8,

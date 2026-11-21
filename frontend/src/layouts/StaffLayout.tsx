@@ -14,6 +14,7 @@ const staffNavigation: { to: string; label: string; icon: IconName }[] = [
    */
   { to: '/staff/products', label: 'Sản phẩm', icon: 'laptop' },
   { to: '/staff/brands', label: 'Thương hiệu', icon: 'shield' },
+  { to: '/staff/categories', label: 'Danh mục', icon: 'tag' },
   { to: '/staff/orders', label: 'Xử lý đơn hàng', icon: 'orders' },
 
   { to: '/staff/inventory', label: 'Kho hàng', icon: 'box' },

@@ -11,8 +11,8 @@
 
 ### 1.1. Giải pháp Tích hợp Spring Boot Starter Mail (`spring-boot-starter-mail`)
 *   **Hướng đi được lựa chọn:**
-    *   Sử dụng starter chính thức `org.springframework.boot:spring-boot-starter-mail` tương thích hoàn toàn với nền tảng Spring Boot 3.5.x và JDK 21+.
-    *   Tách biệt cấu trúc mô-đun: Đặt toàn bộ hạ tầng dịch vụ Email trong package `org.akira.laptopstore.config.mail` bao gồm: DTO (`EmailRequest`), Interface hợp đồng (`EmailService`), Implementation (`EmailServiceImpl`) và Controller kiểm thử (`AdminEmailController`).
+    *   Sử dụng starter chính thức `org.springframework.boot:spring-boot-starter-mail` tương thích hoàn toàn với nền tảng Spring Boot 4.1.1 và JDK 21+.
+    *   Tách biệt cấu trúc mô-đun: Đặt toàn bộ hạ tầng dịch vụ Email trong package chuyên trách `org.akira.laptopstore.mail` bao gồm: DTO (`EmailRequest`), Interface hợp đồng (`EmailService`), Implementation (`EmailServiceImpl`) và Controller kiểm thử (`AdminEmailController`).
     *   Áp dụng nguyên tắc Dependency Inversion (chữ D trong SOLID): Các module nghiệp vụ (Order, Auth, Review, Catalog...) chỉ phụ thuộc vào abstraction interface `EmailService` mà không bị phụ thuộc vào thư viện cụ thể bên ngoài (`JavaMailSender`).
 *   **Lý do lựa chọn (Rationals):**
     *   Tuân thủ nghiêm ngặt bài kiểm thử kiến trúc `ModuleArchitectureTest` (ArchUnit): Package `config` là hạ tầng dùng chung được phép phục vụ các business modules mà không gây chu kỳ phụ thuộc vòng (no cyclic dependencies).
@@ -37,13 +37,13 @@
     *   `backend/pom.xml`: Khai báo dependency `spring-boot-starter-mail`.
     *   `backend/src/main/resources/application.properties`: Khai báo các thuộc tính kết nối SMTP, timeout, `spring.mail.username` và địa chỉ `app.mail.from`, `app.mail.default-to`.
 2.  **Mã nguồn Dịch vụ & Controller:**
-    *   `backend/src/main/java/org/akira/laptopstore/config/mail/dto/EmailRequest.java`: DTO chuẩn hóa yêu cầu gửi thư.
-    *   `backend/src/main/java/org/akira/laptopstore/config/mail/service/EmailService.java`: Giao diện hợp đồng abstraction.
-    *   `backend/src/main/java/org/akira/laptopstore/config/mail/service/EmailServiceImpl.java`: Triển khai gửi thư qua `JavaMailSender` (hỗ trợ text & MIME HTML).
-    *   `backend/src/main/java/org/akira/laptopstore/config/mail/controller/AdminEmailController.java`: API quản trị `/api/v1/admin/emails/send-test` dành cho ADMIN và STAFF.
+    *   `backend/src/main/java/org/akira/laptopstore/mail/dto/EmailRequest.java`: DTO chuẩn hóa yêu cầu gửi thư.
+    *   `backend/src/main/java/org/akira/laptopstore/mail/service/EmailService.java`: Giao diện hợp đồng abstraction.
+    *   `backend/src/main/java/org/akira/laptopstore/mail/service/EmailServiceImpl.java`: Triển khai gửi thư qua `JavaMailSender` (hỗ trợ text & MIME HTML).
+    *   `backend/src/main/java/org/akira/laptopstore/mail/controller/AdminEmailController.java`: API quản trị `/api/v1/admin/emails/send-test` dành riêng cho ADMIN.
 3.  **Tập kiểm thử tự động (TDD):**
-    *   `backend/src/test/java/org/akira/laptopstore/config/mail/EmailServiceTest.java`: Unit test bao phủ 4 kịch bản của `EmailService`.
-    *   `backend/src/test/java/org/akira/laptopstore/config/mail/AdminEmailControllerTest.java`: Unit test bao phủ 3 kịch bản của `AdminEmailController`.
+    *   `backend/src/test/java/org/akira/laptopstore/mail/EmailServiceTest.java`: Unit test bao phủ 4 kịch bản của `EmailService`.
+    *   `backend/src/test/java/org/akira/laptopstore/mail/AdminEmailControllerTest.java`: Controller test bao phủ các kịch bản của `AdminEmailController` (200, 400, 401, 403, 503).
 
 ### 2.2. Điều kiện tiên quyết & Biến môi trường
 Để kích hoạt gửi email thực tế ra bên ngoài thông qua tài khoản Gmail:

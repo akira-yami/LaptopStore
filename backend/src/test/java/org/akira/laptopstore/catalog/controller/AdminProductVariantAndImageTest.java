@@ -1,58 +1,106 @@
 package org.akira.laptopstore.catalog.controller;
 
-/*
- * =========================================================================
- * [TẬP TEST TỰ ĐỘNG - BƯỚC RED TRONG CHU KỲ TDD - AdminProductVariantAndImageTest]:
- * - Tại sao tạo file này:
- *   + Kiểm thử chuyên sâu 2 tính năng quan trọng: chỉnh sửa biến thể/trạng thái bán của variant
- *     và cập nhật bộ sưu tập nhiều ảnh cho sản phẩm.
- * - Giữ theo cách cũ thì ảnh hưởng xấu gì:
- *   + Không kiểm thử tự động việc bật/tắt bán variant hay gán ảnh chính `isPrimary`
- *     dễ dẫn đến lỗi biên dữ liệu: biến thể ngừng bán vẫn cho checkout, hoặc sản phẩm mất ảnh đại diện.
- * - Xử lý theo cách mới được lợi gì:
- *   + Chứng minh mã xử lý đạt chuẩn TDD (RED -> GREEN), kiểm soát chặt chẽ từng trường dữ liệu trả về.
- * =========================================================================
- */
-
-import org.akira.laptopstore.catalog.dto.request.CreateVariantRequest;
-
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.akira.laptopstore.catalog.dto.request.UpdateProductImageRequest;
 import org.akira.laptopstore.catalog.dto.request.UpdateVariantRequest;
 import org.akira.laptopstore.catalog.dto.response.ProductImageDto;
 import org.akira.laptopstore.catalog.dto.response.VariantSnapshot;
+import org.akira.laptopstore.catalog.mapper.ProductMapper;
 import org.akira.laptopstore.catalog.service.ProductService;
 import org.akira.laptopstore.catalog.service.ProductVariantService;
+import org.akira.laptopstore.security.CustomAccessDeniedHandler;
+import org.akira.laptopstore.security.JwtAuthenticationEntryPoint;
+import org.akira.laptopstore.security.SecurityConfig;
+import org.akira.laptopstore.security.filter.JwtAuthenticationFilter;
+import org.akira.laptopstore.security.jwt.JwtTokenProvider;
+import org.akira.laptopstore.security.principal.CustomUserDetails;
+import org.akira.laptopstore.security.principal.CustomUserDetailsService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
-import org.mockito.Mock;
-import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
+import org.springframework.context.annotation.Import;
+import org.springframework.http.MediaType;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.web.servlet.MockMvc;
 
 import java.math.BigDecimal;
 import java.util.List;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-@ExtendWith(MockitoExtension.class)
+import org.akira.laptopstore.exception.GlobalExceptionHandler;
+
+@WebMvcTest(AdminProductController.class)
+@Import({SecurityConfig.class, JwtAuthenticationFilter.class,
+        JwtAuthenticationEntryPoint.class, CustomAccessDeniedHandler.class, GlobalExceptionHandler.class})
 class AdminProductVariantAndImageTest {
 
-    @Mock
+    @Autowired
+    private MockMvc mockMvc;
+
+    private final ObjectMapper objectMapper = new ObjectMapper();
+
+    @MockitoBean
     private ProductService productService;
 
-    @Mock
+    @MockitoBean
     private ProductVariantService productVariantService;
 
-    @InjectMocks
-    private AdminProductController adminProductController;
+    @MockitoBean
+    private ProductMapper productMapper;
+
+    @MockitoBean
+    private JwtTokenProvider jwtTokenProvider;
+
+    @MockitoBean
+    private CustomUserDetailsService userDetailsService;
+
+    private CustomUserDetails createPrincipal(Long id, String role) {
+        return new CustomUserDetails(
+                id,
+                "user@example.com",
+                "secret",
+                0,
+                "ACTIVE",
+                List.of(new SimpleGrantedAuthority(role))
+        );
+    }
 
     @Test
-    @DisplayName("Cập nhật thông tin biến thể sản phẩm thành công (200 OK)")
-    void updateVariant_ShouldReturnUpdatedSnapshot() {
+    @DisplayName("PUT /api/v1/admin/products/{productId}/variants/{variantId} - Chưa đăng nhập trả 401")
+    void updateVariant_unauthenticated_returns401() throws Exception {
+        mockMvc.perform(put("/api/v1/admin/products/1/variants/10")
+                        .contentType(MediaType.APPLICATION_JSON))
+                .andExpect(status().isUnauthorized());
+
+        verifyNoInteractions(productVariantService);
+    }
+
+    @Test
+    @DisplayName("PUT /api/v1/admin/products/{productId}/variants/{variantId} - ROLE_USER bị chặn 403")
+    void updateVariant_asUser_returns403() throws Exception {
+        CustomUserDetails userPrincipal = createPrincipal(10L, "ROLE_USER");
+
+        mockMvc.perform(put("/api/v1/admin/products/1/variants/10")
+                        .with(user(userPrincipal))
+                        .contentType(MediaType.APPLICATION_JSON))
+                .andExpect(status().isForbidden());
+
+        verifyNoInteractions(productVariantService);
+    }
+
+    @Test
+    @DisplayName("PUT /api/v1/admin/products/{productId}/variants/{variantId} - STAFF cập nhật biến thể thành công trả 200 OK")
+    void updateVariant_asStaff_returns200() throws Exception {
+        CustomUserDetails staffPrincipal = createPrincipal(20L, "ROLE_STAFF");
+
         UpdateVariantRequest request = UpdateVariantRequest.builder()
                 .sku("ASUS-ZEN-01")
                 .variantName("16GB - 512GB")
@@ -77,30 +125,41 @@ class AdminProductVariantAndImageTest {
         when(productVariantService.updateVariant(eq(1L), eq(10L), any(UpdateVariantRequest.class)))
                 .thenReturn(snapshot);
 
-        ResponseEntity<VariantSnapshot> response = adminProductController.updateVariant(1L, 10L, request);
+        mockMvc.perform(put("/api/v1/admin/products/1/variants/10")
+                        .with(user(staffPrincipal))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(10))
+                .andExpect(jsonPath("$.sku").value("ASUS-ZEN-01"))
+                .andExpect(jsonPath("$.active").value(true));
 
-        assertEquals(HttpStatus.OK, response.getStatusCode());
-        assertNotNull(response.getBody());
-        assertEquals("ASUS-ZEN-01", response.getBody().getSku());
-        assertEquals(BigDecimal.valueOf(25000000), response.getBody().getPrice());
         verify(productVariantService).updateVariant(eq(1L), eq(10L), any(UpdateVariantRequest.class));
     }
 
     @Test
-    @DisplayName("Cập nhật trạng thái bán / ngừng bán của biến thể (active=false/true)")
-    void updateVariantStatus_ShouldReturnSuccessMessage() {
+    @DisplayName("PATCH /api/v1/admin/products/{productId}/variants/{variantId}/status - Bật/tắt bán variant trả 200 OK")
+    void updateVariantStatus_returns200() throws Exception {
+        CustomUserDetails adminPrincipal = createPrincipal(1L, "ROLE_ADMIN");
         doNothing().when(productVariantService).updateVariantActiveStatus(1L, 10L, false);
 
-        ResponseEntity<String> response = adminProductController.updateVariantStatus(1L, 10L, false);
+        mockMvc.perform(patch("/api/v1/admin/products/1/variants/10/status?active=false")
+                        .with(user(adminPrincipal)))
+                .andExpect(status().isOk());
 
-        assertEquals(HttpStatus.OK, response.getStatusCode());
-        assertEquals("Hủy kích hoạt (Ngừng kinh doanh) biến thể thành công!", response.getBody());
         verify(productVariantService).updateVariantActiveStatus(1L, 10L, false);
     }
 
     @Test
-    @DisplayName("Thêm hoặc cập nhật danh sách ảnh của sản phẩm (nhiều ảnh)")
-    void updateProductImages_ShouldReturnUpdatedImageList() {
+    @DisplayName("PUT /api/v1/admin/products/{productId}/images - Cập nhật bộ sưu tập ảnh thành công trả 200 OK")
+    void updateProductImages_validPayload_returns200() throws Exception {
+        CustomUserDetails staffPrincipal = createPrincipal(20L, "ROLE_STAFF");
+
+        List<UpdateProductImageRequest> requests = List.of(
+                UpdateProductImageRequest.builder().imageUrl("/uploads/products/p1-front.jpg").isPrimary(true).build(),
+                UpdateProductImageRequest.builder().imageUrl("/uploads/products/p1-side.jpg").isPrimary(false).build()
+        );
+
         List<ProductImageDto> updatedImages = List.of(
                 ProductImageDto.builder().id(1L).imageUrl("/uploads/products/p1-front.jpg").isPrimary(true).build(),
                 ProductImageDto.builder().id(2L).imageUrl("/uploads/products/p1-side.jpg").isPrimary(false).build()
@@ -108,12 +167,32 @@ class AdminProductVariantAndImageTest {
 
         when(productService.updateProductImages(eq(1L), anyList())).thenReturn(updatedImages);
 
-        ResponseEntity<List<ProductImageDto>> response = adminProductController.updateProductImages(1L, updatedImages);
+        mockMvc.perform(put("/api/v1/admin/products/1/images")
+                        .with(user(staffPrincipal))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(requests)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(2))
+                .andExpect(jsonPath("$[0].isPrimary").value(true));
 
-        assertEquals(HttpStatus.OK, response.getStatusCode());
-        assertNotNull(response.getBody());
-        assertEquals(2, response.getBody().size());
-        assertEquals(true, response.getBody().get(0).getIsPrimary());
         verify(productService).updateProductImages(eq(1L), anyList());
+    }
+
+    @Test
+    @DisplayName("PUT /api/v1/admin/products/{productId}/images - Ảnh có imageUrl rỗng trả 400 Bad Request")
+    void updateProductImages_blankImageUrl_returns400() throws Exception {
+        CustomUserDetails staffPrincipal = createPrincipal(20L, "ROLE_STAFF");
+
+        List<UpdateProductImageRequest> invalidRequests = List.of(
+                UpdateProductImageRequest.builder().imageUrl("   ").isPrimary(true).build()
+        );
+
+        mockMvc.perform(put("/api/v1/admin/products/1/images")
+                        .with(user(staffPrincipal))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(invalidRequests)))
+                .andExpect(status().isBadRequest());
+
+        verifyNoInteractions(productService);
     }
 }

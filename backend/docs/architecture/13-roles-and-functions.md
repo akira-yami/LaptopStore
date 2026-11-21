@@ -111,8 +111,12 @@ STAFF tập trung vào **xử lý hoạt động hàng ngày của cửa hàng**
 |  | Nhận một phần: `DRAFT → PARTIALLY_RECEIVED` |
 |  | Nhận đủ: `PARTIALLY_RECEIVED → RECEIVED` hoặc `DRAFT → RECEIVED` |
 |  | Khi receive, hệ thống tự cộng inventory theo số lượng thực nhận |
-| **Catalog** | Xem product / variant / SKU để phục vụ bán hàng |
-|  | Không CRUD catalog trong baseline hiện tại |
+| **Catalog** | Quản lý sản phẩm, biến thể, ảnh sản phẩm, danh mục và thương hiệu (theo [ADR-005](../adr/ADR-005-staff-catalog-management.md)) |
+|  | Xem danh sách (kể cả bản ghi ngừng hoạt động/ngừng bán) |
+|  | Thêm/sửa sản phẩm, cập nhật cấu hình/thông số kỹ thuật |
+|  | Thêm/sửa thông tin biến thể, gạt bật/tắt trạng thái kinh doanh (`active = true/false`) |
+|  | Cập nhật bộ sưu tập ảnh (thêm, xóa, đánh dấu ảnh chính `isPrimary`) |
+|  | Thêm/sửa danh mục và thương hiệu |
 | **Review** | Xem review |
 |  | Ẩn review vi phạm |
 |  | Hiện lại review đã ẩn |
@@ -122,12 +126,11 @@ STAFF tập trung vào **xử lý hoạt động hàng ngày của cửa hàng**
 
 ### STAFF không được
 
-- Tạo/xóa product.
-- Sửa giá.
-- Quản lý role.
-- Khóa/mở khóa tài khoản.
-- CRUD coupon hoặc supplier.
-- Chỉnh tồn kho thủ công.
+- Quản lý role, đổi role hoặc phân quyền tài khoản người dùng.
+- Khóa/mở khóa tài khoản người dùng (`/api/v1/admin/users/**`).
+- Gửi email kiểm thử hệ thống qua SMTP (`/api/v1/admin/emails/**` - chỉ dành riêng cho `ADMIN`).
+- CRUD coupon hoặc supplier (chỉ `ADMIN`).
+- Chỉnh tồn kho thủ công (ngoài quy trình Procurement nhập hàng).
 - Sửa nội dung review của USER.
 - Tự đánh dấu online payment thành công.
 

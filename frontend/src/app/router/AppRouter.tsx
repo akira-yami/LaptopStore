@@ -83,7 +83,7 @@ const ScrollToTop: React.FC = () => {
 const operationPages = [
   { path: 'products', Page: AdminProductPage },
   { path: 'brands', Page: AdminBrandPage },
-  { path: 'orders', Page: StaffOrderListPage },
+  { path: 'categories', Page: AdminCategoryPage },
   { path: 'inventory', Page: InventoryPage },
   { path: 'procurement', Page: PurchaseOrderListPage },
   { path: 'suppliers', Page: SupplierListPage },
@@ -157,9 +157,6 @@ export const AppRouter: React.FC = () => (
               <Route index element={<Navigate to={ADMIN_HOME} replace />} />
               <Route path="dashboard" element={<OpsDashboardPage workspace="admin" />} />
               <Route path="orders" element={<StaffOrderListPage canReviewReturns />} />
-              <Route path="products" element={<AdminProductPage />} />
-              <Route path="categories" element={<AdminCategoryPage />} />
-              <Route path="brands" element={<AdminBrandPage />} />
               <Route path="promotions/*" element={<PromotionRoutes />} />
               <Route path="users" element={<AdminUserListPage />} />
               <Route path="refund-requests" element={<AdminRefundRequestsPage />} />

@@ -1,26 +1,10 @@
-package org.akira.laptopstore.config.mail;
-
-/*
- * =========================================================================
- * [TẬP TEST TỰ ĐỘNG - BƯỚC RED TRONG CHU KỲ TDD - EmailServiceTest]:
- * - Tại sao tạo file này:
- *   + Tuân thủ nguyên tắc TDD "Tests BEFORE Code": xây dựng bài kiểm thử tự động
- *     mô tả toàn diện các hành vi của EmailService (gửi email văn bản, gửi email HTML,
- *     xử lý địa chỉ người nhận mặc định `stevenndln@gmail.com`, bắt lỗi ngoại lệ khi SMTP gặp sự cố).
- * - Giữ theo cách cũ thì ảnh hưởng xấu gì:
- *   + Viết trực tiếp logic gửi mail mà không có test tự động sẽ khó phát hiện các lỗi
- *     như: quên set From header, parse sai định dạng MIME HTML, sập ứng dụng khi mail server offline.
- * - Xử lý theo cách mới được lợi gì:
- *   + Đạt kiểm thử chất lượng trước khi viết code (RED -> GREEN).
- *   + Mock toàn bộ JavaMailSender, chạy độc lập mà không cần kết nối mạng internet thật.
- * =========================================================================
- */
+package org.akira.laptopstore.mail;
 
 import jakarta.mail.Session;
 import jakarta.mail.internet.MimeMessage;
-import org.akira.laptopstore.config.mail.dto.EmailRequest;
-import org.akira.laptopstore.config.mail.service.EmailService;
-import org.akira.laptopstore.config.mail.service.EmailServiceImpl;
+import org.akira.laptopstore.mail.dto.EmailRequest;
+import org.akira.laptopstore.mail.service.EmailService;
+import org.akira.laptopstore.mail.service.impl.EmailServiceImpl;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -28,6 +12,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.mail.MailSendException;
 import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
 
@@ -70,7 +55,7 @@ class EmailServiceTest {
         verify(mailSender, times(1)).send(messageCaptor.capture());
 
         SimpleMailMessage capturedMessage = messageCaptor.getValue();
-        assertEquals(DEFAULT_SENDER, capturedMessage.getFrom(), "Email người gửi phải là stevenndln@gmail.com");
+        assertEquals(DEFAULT_SENDER, capturedMessage.getFrom());
         assertNotNull(capturedMessage.getTo());
         assertEquals("customer@example.com", capturedMessage.getTo()[0]);
         assertEquals("Xác nhận đơn hàng #12345", capturedMessage.getSubject());
@@ -94,7 +79,7 @@ class EmailServiceTest {
         verify(mailSender, times(1)).send(messageCaptor.capture());
 
         SimpleMailMessage capturedMessage = messageCaptor.getValue();
-        assertEquals(DEFAULT_RECIPIENT, capturedMessage.getTo()[0], "Nếu to rỗng, phải gửi về stevenndln@gmail.com");
+        assertEquals(DEFAULT_RECIPIENT, capturedMessage.getTo()[0]);
     }
 
     @Test
@@ -118,9 +103,9 @@ class EmailServiceTest {
     }
 
     @Test
-    @DisplayName("Khi JavaMailSender ném ngoại lệ (MailException), EmailService bắt lỗi an toàn và trả về false")
-    void sendEmail_ShouldHandleExceptionGracefully() {
-        doThrow(new RuntimeException("Kết nối SMTP server thất bại"))
+    @DisplayName("Khi JavaMailSender ném MailException, EmailService bắt lỗi kết nối an toàn và trả về false")
+    void sendEmail_ShouldHandleMailExceptionGracefully() {
+        doThrow(new MailSendException("Lỗi kết nối máy chủ SMTP"))
                 .when(mailSender).send(any(SimpleMailMessage.class));
 
         EmailRequest request = EmailRequest.builder()
@@ -132,6 +117,26 @@ class EmailServiceTest {
 
         boolean result = emailService.sendEmail(request);
 
-        assertFalse(result, "Khi gặp lỗi kết nối SMTP, hàm phải bắt ngoại lệ an toàn và trả về false thay vì crash app");
+        assertFalse(result, "Khi gặp lỗi kết nối SMTP, hàm phải bắt ngoại lệ an toàn và trả về false");
+    }
+
+    @Test
+    @DisplayName("Ném IllegalArgumentException khi request null hoặc subject/content để trống (không swallow lỗi lập trình)")
+    void sendEmail_ShouldThrowIllegalArgumentException_OnInvalidInput() {
+        assertThrows(IllegalArgumentException.class, () -> emailService.sendEmail(null));
+
+        EmailRequest emptySubjectRequest = EmailRequest.builder()
+                .to("test@example.com")
+                .subject("   ")
+                .content("Valid content")
+                .build();
+        assertThrows(IllegalArgumentException.class, () -> emailService.sendEmail(emptySubjectRequest));
+
+        EmailRequest emptyContentRequest = EmailRequest.builder()
+                .to("test@example.com")
+                .subject("Valid subject")
+                .content("")
+                .build();
+        assertThrows(IllegalArgumentException.class, () -> emailService.sendEmail(emptyContentRequest));
     }
 }

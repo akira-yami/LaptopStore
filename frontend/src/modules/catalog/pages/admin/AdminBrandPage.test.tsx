@@ -1,19 +1,5 @@
-/**
- * =========================================================================
- * [TEST TỰ ĐỘNG FRONTEND - BƯỚC RED TRONG CHU KỲ TDD - AdminBrandPage.test.tsx]:
- * - Tại sao tạo file này:
- *   Kiểm thử hành vi render danh sách thương hiệu, badge trạng thái kinh doanh
- *   và sự hiện diện của các nút Thao tác (Thêm, Sửa, Xóa).
- * - Giữ theo cách cũ thì ảnh hưởng xấu gì:
- *   Không có test frontend dễ dẫn đến lỗi vỡ giao diện, thiếu component context (như ToastProvider),
- *   hoặc không hiển thị đúng danh sách dữ liệu thực tế khi backend trả về.
- * - Xử lý theo cách mới được lợi gì:
- *   Đảm bảo trang AdminBrandPage hoạt động trơn tru, cô lập mock API sạch sẽ và pass 100% trong CI.
- * =========================================================================
- */
 import { ToastProvider } from '@/components/ui';
-
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import React from 'react';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -61,5 +47,120 @@ describe('AdminBrandPage', () => {
     expect(screen.getAllByRole('button', { name: /Sửa/i })).toHaveLength(2);
     expect(screen.getAllByRole('button', { name: /Xóa/i })).toHaveLength(2);
   });
-});
 
+  it('mở modal thêm mới, nhập dữ liệu và submit tạo thương hiệu thành công', async () => {
+    vi.mocked(brandApi.getAllBrands).mockResolvedValue([]);
+    vi.mocked(brandApi.createBrand).mockResolvedValue({ id: 10, name: 'Lenovo', active: true });
+
+    render(
+      <ToastProvider>
+        <MemoryRouter>
+          <AdminBrandPage />
+        </MemoryRouter>
+      </ToastProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Chưa có thương hiệu nào.')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /Thêm thương hiệu/i }));
+
+    expect(screen.getByRole('heading', { name: 'Thêm thương hiệu' })).toBeInTheDocument();
+
+    const inputName = screen.getByPlaceholderText(/Ví dụ: Apple, ASUS/i);
+    fireEvent.change(inputName, { target: { value: 'Lenovo' } });
+
+    const submitBtn = screen.getByRole('button', { name: /^Lưu$/i });
+    fireEvent.click(submitBtn);
+
+    await waitFor(() => {
+      expect(brandApi.createBrand).toHaveBeenCalledWith({
+        name: 'Lenovo',
+        description: undefined,
+      });
+    });
+  });
+
+  it('mở modal sửa thương hiệu và submit cập nhật thành công', async () => {
+    vi.mocked(brandApi.getAllBrands).mockResolvedValue([
+      { id: 1, name: 'Apple', description: 'MacBook', active: true },
+    ]);
+    vi.mocked(brandApi.updateBrand).mockResolvedValue({ id: 1, name: 'Apple Inc', active: true });
+
+    render(
+      <ToastProvider>
+        <MemoryRouter>
+          <AdminBrandPage />
+        </MemoryRouter>
+      </ToastProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Apple')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /Sửa/i }));
+
+    expect(screen.getByRole('heading', { name: 'Sửa thương hiệu' })).toBeInTheDocument();
+
+    const inputName = screen.getByPlaceholderText(/Ví dụ: Apple, ASUS/i);
+    fireEvent.change(inputName, { target: { value: 'Apple Inc' } });
+
+    const submitBtn = screen.getByRole('button', { name: /^Lưu$/i });
+    fireEvent.click(submitBtn);
+
+    await waitFor(() => {
+      expect(brandApi.updateBrand).toHaveBeenCalledWith(1, {
+        name: 'Apple Inc',
+        description: 'MacBook',
+      });
+    });
+  });
+
+  it('mở modal xác nhận xóa và xác nhận xóa thương hiệu thành công', async () => {
+    vi.mocked(brandApi.getAllBrands).mockResolvedValue([
+      { id: 2, name: 'Dell', description: 'XPS', active: true },
+    ]);
+    vi.mocked(brandApi.deleteBrand).mockResolvedValue('Xóa thành công');
+
+    render(
+      <ToastProvider>
+        <MemoryRouter>
+          <AdminBrandPage />
+        </MemoryRouter>
+      </ToastProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Dell')).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /Xóa/i }));
+
+    expect(screen.getByText(/Xóa thương hiệu “Dell”\?/i)).toBeInTheDocument();
+
+    const confirmBtn = screen.getAllByRole('button', { name: /^Xóa$/i })[1];
+    fireEvent.click(confirmBtn);
+
+    await waitFor(() => {
+      expect(brandApi.deleteBrand).toHaveBeenCalledWith(2);
+    });
+  });
+
+  it('hiển thị thông báo lỗi khi tải danh sách thương hiệu thất bại', async () => {
+    vi.mocked(brandApi.getAllBrands).mockRejectedValue(new Error('Network error'));
+
+    render(
+      <ToastProvider>
+        <MemoryRouter>
+          <AdminBrandPage />
+        </MemoryRouter>
+      </ToastProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText(/Không thể tải danh sách thương hiệu/i)).toBeInTheDocument();
+    });
+  });
+});
