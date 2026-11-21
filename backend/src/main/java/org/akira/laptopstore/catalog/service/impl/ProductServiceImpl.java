@@ -143,6 +143,7 @@ public class ProductServiceImpl implements ProductService {
     }
 
     @Override
+    @Transactional(readOnly = true)
     public List<ProductResponse> findAllProducts() {
         List<Product> products = productRepository.findAll();
         return productMapper.toProductResponseList(products);
@@ -170,6 +171,7 @@ public class ProductServiceImpl implements ProductService {
     }
 
     @Override
+    @Transactional(readOnly = true)
     public Page<ProductSummaryResponse> searchAndFilterProducts(ProductSearchCriteria criteria, Pageable pageable) {
 
         // 1. Nếu có yêu cầu sort theo giá -> Gỡ bỏ Sort mặc định của Pageable
