@@ -25,16 +25,28 @@ import org.akira.laptopstore.user.entity.User;
 import org.akira.laptopstore.user.repository.RoleRepository;
 import org.akira.laptopstore.user.repository.UserRepository;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 
+import java.util.HashSet;
+import java.util.Locale;
 import java.util.Set;
 
 @Component
 @RequiredArgsConstructor
 @Slf4j
 public class DatabaseSeeder implements CommandLineRunner {
+
+    @Value("${APP_SEED_DEMO_DATA:true}")
+    private boolean seedDemoData;
+
+    @Value("${ADMIN_BOOTSTRAP_EMAIL:}")
+    private String adminBootstrapEmail;
+
+    @Value("${ADMIN_BOOTSTRAP_PASSWORD:}")
+    private String adminBootstrapPassword;
 
     private final UserRepository userRepository;
     private final RoleRepository roleRepository; // Bổ sung kho lưu trữ Role
@@ -48,6 +60,24 @@ public class DatabaseSeeder implements CommandLineRunner {
     @Override
     public void run(String... args) throws Exception {
         String adminEmail = "kietadmin@gmail.com";
+        if (!seedDemoData) {
+            // Rotate an insecure demo credential if a prior startup seeded it.
+            userRepository.findByEmailIgnoreCase(adminEmail).ifPresent(existing -> {
+                if (passwordEncoder.matches("password123", existing.getPasswordHash())) {
+                    if (adminBootstrapPassword == null || adminBootstrapPassword.isBlank()) {
+                        throw new IllegalStateException(
+                                "ADMIN_BOOTSTRAP_PASSWORD is required to rotate insecure demo admin");
+                    }
+                    existing.setPasswordHash(passwordEncoder.encode(adminBootstrapPassword));
+                    existing.setTokenVersion(existing.getTokenVersion() + 1);
+                    userRepository.save(existing);
+                    log.warn("Rotated unsafe demo admin credential for production");
+                }
+            });
+            bootstrapConfiguredAdmin();
+            return;
+        }
+
 
         if (userRepository.findByEmailIgnoreCase(adminEmail).isEmpty()) {
             // 1. Tìm Role ADMIN trong DB, nếu chưa có thì tự động tạo mới
@@ -115,5 +145,51 @@ public class DatabaseSeeder implements CommandLineRunner {
         else {
             log.info("Tai khoan ADMIN da ton tai, bo qua buoc khoi tao.");
         }
+    }
+
+    private void bootstrapConfiguredAdmin() {
+        if (adminBootstrapEmail == null || adminBootstrapEmail.isBlank()
+                || adminBootstrapPassword == null || adminBootstrapPassword.isBlank()) {
+            return;
+        }
+
+        String normalizedEmail = adminBootstrapEmail.trim().toLowerCase(Locale.ROOT);
+        Role adminRole = roleRepository.findByName("ROLE_ADMIN")
+                .orElseGet(() -> roleRepository.save(Role.builder().name("ROLE_ADMIN").build()));
+
+        userRepository.findByEmailIgnoreCase(normalizedEmail).ifPresentOrElse(existing -> {
+            boolean changed = false;
+            if (!passwordEncoder.matches(adminBootstrapPassword, existing.getPasswordHash())) {
+                existing.setPasswordHash(passwordEncoder.encode(adminBootstrapPassword));
+                existing.setTokenVersion(existing.getTokenVersion() + 1);
+                changed = true;
+            }
+            if (!"ACTIVE".equals(existing.getStatus())) {
+                existing.setStatus("ACTIVE");
+                changed = true;
+            }
+            Set<Role> roles = existing.getRoles() == null ? new HashSet<>() : new HashSet<>(existing.getRoles());
+            boolean hasAdminRole = roles.stream().anyMatch(r -> "ROLE_ADMIN".equals(r.getName()));
+            if (!hasAdminRole) {
+                roles.add(adminRole);
+                existing.setRoles(roles);
+                changed = true;
+            }
+            if (changed) {
+                userRepository.save(existing);
+                log.info("Updated configured ADMIN account: {}", normalizedEmail);
+            }
+        }, () -> {
+            User admin = User.builder()
+                    .email(normalizedEmail)
+                    .passwordHash(passwordEncoder.encode(adminBootstrapPassword))
+                    .fullName("Administrator")
+                    .phone("0900000000")
+                    .status("ACTIVE")
+                    .roles(new HashSet<>(Set.of(adminRole)))
+                    .build();
+            userRepository.save(admin);
+            log.info("Created configured ADMIN account: {}", normalizedEmail);
+        });
     }
 }

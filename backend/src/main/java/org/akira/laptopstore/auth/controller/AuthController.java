@@ -11,6 +11,7 @@ import org.akira.laptopstore.auth.dto.RefreshTokenResponse;
 import org.akira.laptopstore.auth.dto.RegisterRequest;
 import org.akira.laptopstore.auth.service.AuthService;
 import org.akira.laptopstore.security.jwt.JwtProperties;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseCookie;
@@ -26,6 +27,9 @@ public class AuthController {
 
     private final AuthService authService;
     private final JwtProperties jwtProperties;
+
+    @Value("${AUTH_COOKIE_SECURE:false}")
+    private boolean secureCookies;
 
     @PostMapping("/register")
     public ResponseEntity<AuthResponse> register(
@@ -72,7 +76,7 @@ public class AuthController {
     private void setRefreshTokenCookie(HttpServletResponse response, String token, long maxAgeSeconds) {
         ResponseCookie cookie = ResponseCookie.from(jwtProperties.getRefreshCookieName(), token)
                 .httpOnly(true)
-                .secure(false)
+                .secure(secureCookies)
                 .sameSite("Lax")
                 .path("/api/v1/auth")
                 .maxAge(maxAgeSeconds)
@@ -83,7 +87,7 @@ public class AuthController {
     private void clearRefreshTokenCookie(HttpServletResponse response) {
         ResponseCookie cookie = ResponseCookie.from(jwtProperties.getRefreshCookieName(), "")
                 .httpOnly(true)
-                .secure(false)
+                .secure(secureCookies)
                 .sameSite("Lax")
                 .path("/api/v1/auth")
                 .maxAge(0)
